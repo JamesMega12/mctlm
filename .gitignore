@@ -1,0 +1,15 @@
+# Local Claude Code tooling state (not part of the project)
+.claude/
+
+# Dependencies and build output
+node_modules/
+dist/
+dist-ssr/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+*.local
