@@ -1,6 +1,6 @@
 import { useStore } from '../../store/useStore';
 import { SLNAME } from '../../lib/constants';
-import { pendList } from '../../lib/derive';
+import { getCheck, pendList } from '../../lib/derive';
 
 export default function ReviewQueue() {
   const checks = useStore((s) => s.checks);
@@ -25,7 +25,7 @@ export default function ReviewQueue() {
         <h3>Drift from last scrape ({open.length})</h3>
         {open.length ? (
           open.map((m) => {
-            const c = checks[m.check];
+            const c = getCheck(checks, m.check)!;
             return (
               <div className="rq" key={m.id}>
                 <span className="pill drift">Drift</span>
@@ -111,7 +111,7 @@ export default function ReviewQueue() {
           <div className="log">
             {closed.map((m) => (
               <div key={m.id}>
-                {checks[m.check].n.slice(0, 70)}… · CPF-{m.u} {SLNAME(m.s)} · {m.done}
+                {getCheck(checks, m.check)!.n.slice(0, 70)}… · CPF-{m.u} {SLNAME(m.s)} · {m.done}
               </div>
             ))}
           </div>

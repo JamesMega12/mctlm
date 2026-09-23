@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store/useStore';
-import { GROUPS, SLNAME, UNITS } from '../lib/constants';
-import { status } from '../lib/derive';
+import { GROUPS, SLNAME } from '../lib/constants';
+import { getCheck, getSection, status } from '../lib/derive';
 import { sim } from '../lib/text';
 import type { Option } from '../types';
 
@@ -12,6 +12,7 @@ export default function Drawer({ id }: { id: number }) {
   const checks = useStore((s) => s.checks);
   const sections = useStore((s) => s.sections);
   const mismatches = useStore((s) => s.mismatches);
+  const units = useStore((s) => s.units);
   const editing = useStore((s) => s.editing);
   const setEditing = useStore((s) => s.setEditing);
   const closeDrawer = useStore((s) => s.closeDrawer);
@@ -20,10 +21,10 @@ export default function Drawer({ id }: { id: number }) {
   const toggleUse = useStore((s) => s.toggleUse);
   const pushToast = useStore((s) => s.pushToast);
 
-  const c = checks[id];
+  const c = getCheck(checks, id)!;
   const st = status(c);
   const sl = GROUPS[c.g];
-  const section = sections[c.s];
+  const section = getSection(sections, c.s)!;
 
   const [formN, setFormN] = useState(c.n);
   const [formC, setFormC] = useState(c.c || '');
@@ -47,8 +48,8 @@ export default function Drawer({ id }: { id: number }) {
     else closeBtnRef.current?.focus();
   }, [editing, id]);
 
-  const have = UNITS.filter((u) => c.rows.some((r) => r.u === u));
-  const missing = UNITS.filter((u) => !have.includes(u));
+  const have = units.filter((u) => c.rows.some((r) => r.u === u));
+  const missing = units.filter((u) => !have.includes(u));
 
   const looks = checks
     .filter((x) => x.id !== id && x.g === c.g)
@@ -206,7 +207,7 @@ export default function Drawer({ id }: { id: number }) {
             </tr>
           </thead>
           <tbody>
-            {UNITS.map((u) => (
+            {units.map((u) => (
               <tr key={u}>
                 <td>CPF-{u}</td>
                 {sl.map((x) => {

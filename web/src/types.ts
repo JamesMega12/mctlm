@@ -14,7 +14,9 @@ export type Group = 'SL0' | 'SL1/3/4';
 
 export type ServiceLevel = 'Outgoing' | 'Rigup' | 'RigDown' | 'Incoming' | 'SL1' | 'SL3' | 'SL4';
 
-export type Unit = '376/377' | '577' | '573' | '870';
+// A plain string, not a fixed union — units are user-extensible (see addUnit in
+// the store), so "376/377" and any later-added unit name are equally valid.
+export type Unit = string;
 
 export type SyncStatus = 'synced' | 'pending' | 'drift';
 

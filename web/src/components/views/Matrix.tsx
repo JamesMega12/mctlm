@@ -1,13 +1,14 @@
 import type { ReactNode } from 'react';
 import { useStore } from '../../store/useStore';
-import { GROUPS, MODES, SLNAME, UNITS } from '../../lib/constants';
-import { baseMatch, cols, summary, unitMatch, type MatrixFilters } from '../../lib/derive';
+import { GROUPS, MODES, SLNAME } from '../../lib/constants';
+import { baseMatch, cols, getSection, summary, unitMatch, type MatrixFilters } from '../../lib/derive';
 import type { SyncStatus, UnitMatchMode } from '../../types';
 import MatrixRow from './MatrixRow';
 
 export default function Matrix() {
   const checks = useStore((s) => s.checks);
   const sections = useStore((s) => s.sections);
+  const units = useStore((s) => s.units);
   const mg = useStore((s) => s.mg);
   const q = useStore((s) => s.q);
   const fsec = useStore((s) => s.fsec);
@@ -30,8 +31,11 @@ export default function Matrix() {
   const colFilter = useStore((s) => s.colFilter);
   const openAddCheckDialog = useStore((s) => s.openAddCheckDialog);
   const openExportDialog = useStore((s) => s.openExportDialog);
+  const openSectionDrawer = useStore((s) => s.openSectionDrawer);
+  const openAddSectionDialog = useStore((s) => s.openAddSectionDialog);
+  const openAddUnitDialog = useStore((s) => s.openAddUnitDialog);
 
-  const filters: MatrixFilters = { mg, q, fsec, fst, fu, fs, mode, onlyCols };
+  const filters: MatrixFilters = { mg, q, fsec, fst, fu, fs, mode, onlyCols, units };
   const g = GROUPS[mg];
   const { us, ss } = cols(filters);
   const span = 2 + us.length * ss.length;
@@ -47,9 +51,9 @@ export default function Matrix() {
   filtered.forEach((c) => {
     if (c.s !== last) {
       last = c.s;
-      const sec = sections[c.s];
+      const sec = getSection(sections, c.s)!;
       rows.push(
-        <tr className="sec" key={`sec-${sec.id}`}>
+        <tr className="sec" key={`sec-${sec.id}`} onClick={() => openSectionDrawer(sec.id)} style={{ cursor: 'pointer' }}>
           <td colSpan={span}>
             <span>
               {sec.name}
@@ -62,7 +66,10 @@ export default function Matrix() {
             </span>
             <button
               className="addbtn"
-              onClick={() => openAddCheckDialog(sec.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                openAddCheckDialog(sec.id);
+              }}
               title={`Add a check to ${sec.name}`}
               aria-label={`Add a check to ${sec.name}`}
             >
@@ -72,14 +79,17 @@ export default function Matrix() {
         </tr>,
       );
     }
-    rows.push(<MatrixRow key={c.id} checkId={c.id} us={us} ss={ss} span={span} isOpen={openRow === c.id} mg={mg} fs={fs} />);
+    rows.push(
+      <MatrixRow key={c.id} checkId={c.id} us={us} ss={ss} span={span} isOpen={openRow === c.id} mg={mg} fs={fs} units={units} />,
+    );
   });
 
   return (
     <>
       <h2>Matrix view</h2>
       <p className="sub">
-        Single click a check to see its answers, double click to open and edit it. Use + on a section to add a check
+        Single click a check to see its answers, double click to open and edit it, or click a unit box in the grid to
+        tick it in or out. Click a section heading to view, rename or remove it; use + on a heading to add a check
         there.
       </p>
 
@@ -107,7 +117,7 @@ export default function Matrix() {
           <option value="">All sections</option>
           {secOpts.map((sid) => (
             <option value={sid} key={sid}>
-              {sections[sid].name}
+              {getSection(sections, sid)!.name}
             </option>
           ))}
         </select>
@@ -121,11 +131,14 @@ export default function Matrix() {
       <div className="filters panel">
         <div className="frow">
           <span className="flabel">Units</span>
-          {UNITS.map((u) => (
+          {units.map((u) => (
             <button key={u} className="chip" aria-pressed={fu.includes(u)} onClick={() => toggleUnitFilter(u)}>
               CPF-{u}
             </button>
           ))}
+          <button className="linkbtn" onClick={openAddUnitDialog} title="Add a new unit">
+            + Add unit
+          </button>
           <select
             value={mode}
             onChange={(e) => setUnitMode(e.target.value as UnitMatchMode)}
@@ -210,6 +223,12 @@ export default function Matrix() {
           </tbody>
         </table>
       </div>
+
+      <p style={{ marginTop: 12 }}>
+        <button className="btn ghost" onClick={() => openAddSectionDialog(mg)}>
+          + Add section
+        </button>
+      </p>
     </>
   );
 }

@@ -1,9 +1,33 @@
-import { GROUPS, UNITS } from './constants';
-import type { Check, Group, Mismatch, PendingRowRef, ServiceLevel, SyncStatus, Unit, UnitMatchMode } from '../types';
+import { GROUPS } from './constants';
+import type {
+  Check,
+  Group,
+  Mismatch,
+  PendingRowRef,
+  Section,
+  ServiceLevel,
+  SyncStatus,
+  Unit,
+  UnitMatchMode,
+} from '../types';
+
+/** Look up a check by its stable id — never by array position. Checks can be
+ * removed (cascade-delete on section removal), which shifts array indices but
+ * never reuses or renumbers an existing `.id`, so this is the only safe way
+ * to resolve one. */
+export function getCheck(checks: Check[], id: number): Check | undefined {
+  return checks.find((c) => c.id === id);
+}
+
+/** Same as getCheck, for sections. */
+export function getSection(sections: Section[], id: number): Section | undefined {
+  return sections.find((s) => s.id === id);
+}
 
 /** The matrix's filter/view state — everything `derive` functions need to know
  * which checks and columns are currently in view. Mirrors the module-scope
- * globals (`mg, q, fsec, fst, fu, fs, mode, onlyCols`) from the original demo. */
+ * globals (`mg, q, fsec, fst, fu, fs, mode, onlyCols`) from the original demo.
+ * `units` is the live, store-owned unit list (user-extensible via addUnit). */
 export interface MatrixFilters {
   mg: Group;
   q: string;
@@ -13,6 +37,7 @@ export interface MatrixFilters {
   fs: ServiceLevel[];
   mode: UnitMatchMode;
   onlyCols: boolean;
+  units: Unit[];
 }
 
 export function counts(checks: Check[]): { s: number; p: number; d: number } {
@@ -67,9 +92,9 @@ export function baseMatchNoGroup(c: Check, g: Group, filters: MatrixFilters): bo
 }
 
 export function unitMatch(c: Check, filters: MatrixFilters): boolean {
-  const { fu, mode } = filters;
-  const others = UNITS.filter((u) => !fu.includes(u));
-  if (!fu.length) return UNITS.some((u) => has(c, u, filters));
+  const { fu, mode, units } = filters;
+  const others = units.filter((u) => !fu.includes(u));
+  if (!fu.length) return units.some((u) => has(c, u, filters));
   if (mode === 'any') return fu.some((u) => has(c, u, filters));
   if (mode === 'all') return fu.every((u) => has(c, u, filters));
   if (mode === 'only') return fu.every((u) => has(c, u, filters)) && others.every((u) => !has(c, u, filters));
@@ -102,9 +127,9 @@ export function summary(filters: MatrixFilters): SummaryResult {
 /** Which unit/service-level columns to show, given the "show selected columns
  * only" toggle and the current filter chips. */
 export function cols(filters: MatrixFilters): { us: Unit[]; ss: ServiceLevel[] } {
-  const { onlyCols, fu, mode, fs, mg } = filters;
+  const { onlyCols, fu, mode, fs, mg, units } = filters;
   return {
-    us: onlyCols && fu.length && mode !== 'missing' ? UNITS.filter((u) => fu.includes(u)) : UNITS,
+    us: onlyCols && fu.length && mode !== 'missing' ? units.filter((u) => fu.includes(u)) : units,
     ss: onlyCols && fs.length ? GROUPS[mg].filter((s) => fs.includes(s)) : GROUPS[mg],
   };
 }

@@ -1,7 +1,7 @@
 import { useRef } from 'react';
 import { useStore } from '../../store/useStore';
-import { SLNAME, UNITS } from '../../lib/constants';
-import { has } from '../../lib/derive';
+import { SLNAME } from '../../lib/constants';
+import { getCheck, has } from '../../lib/derive';
 import type { Group, ServiceLevel, Unit } from '../../types';
 
 interface Props {
@@ -12,22 +12,28 @@ interface Props {
   isOpen: boolean;
   mg: Group;
   fs: ServiceLevel[];
+  units: Unit[];
 }
 
 /** One matrix row, plus its expanded answer strip when open. A single click
  * expands the row (debounced 200ms so it doesn't fire before a double
  * click); a double click, Enter, or the "Open and edit" button opens the
- * drawer in edit mode; Space toggles the row immediately. */
-export default function MatrixRow({ checkId, us, ss, span, isOpen, mg, fs }: Props) {
-  const c = useStore((s) => s.checks[checkId]);
+ * drawer in edit mode; Space toggles the row immediately. Each unit/level
+ * cell is itself a button — click it to tick the check in or out of that
+ * document directly, without opening the drawer. */
+export default function MatrixRow({ checkId, us, ss, span, isOpen, mg, fs, units }: Props) {
+  const c = useStore((s) => getCheck(s.checks, checkId));
   const toggleOpenRow = useStore((s) => s.toggleOpenRow);
   const openDrawer = useStore((s) => s.openDrawer);
+  const toggleUse = useStore((s) => s.toggleUse);
   const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  if (!c) return null;
+
   const levelFilters = { fs, mg };
-  // Always counted against all 4 units, independent of which unit columns
-  // are currently shown — matches the original's UNITS.filter(...).length.
-  const unitCount = UNITS.filter((u) => has(c, u, levelFilters)).length;
+  // Always counted against every unit, independent of which unit columns are
+  // currently shown by the "show selected columns only" toggle.
+  const unitCount = units.filter((u) => has(c, u, levelFilters)).length;
 
   const handleRowClick = () => {
     if (clickTimer.current) clearTimeout(clickTimer.current);
@@ -65,14 +71,24 @@ export default function MatrixRow({ checkId, us, ss, span, isOpen, mg, fs }: Pro
           </span>
         </td>
         <td>
-          <span className={`ucount ${unitCount === 4 ? 'full' : ''}`}>{unitCount}/4</span>
+          <span className={`ucount ${unitCount === units.length ? 'full' : ''}`}>
+            {unitCount}/{units.length}
+          </span>
         </td>
         {us.map((u) =>
           ss.map((s, i) => {
             const r = c.rows.find((row) => row.u === u && row.s === s);
             return (
               <td className={i === 0 ? 'gl' : undefined} key={u + s}>
-                <i className={`dot ${r ? r.st : 'none'}`} title={`CPF-${u} ${SLNAME(s)}: ${r ? r.st : 'not in document'}`} />
+                <button
+                  className={`dot ${r ? r.st : 'none'}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleUse(checkId, u, s);
+                  }}
+                  aria-pressed={!!r}
+                  title={`CPF-${u} ${SLNAME(s)}: ${r ? r.st + ' — click to remove' : 'not in document — click to add'}`}
+                />
               </td>
             );
           }),

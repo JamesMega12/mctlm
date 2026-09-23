@@ -1,10 +1,11 @@
 import { useStore } from '../../store/useStore';
-import { SLNAME, UNITS } from '../../lib/constants';
-import { counts } from '../../lib/derive';
+import { SLNAME } from '../../lib/constants';
+import { counts, getCheck } from '../../lib/derive';
 
 export default function Dashboard() {
   const checks = useStore((s) => s.checks);
   const mismatches = useStore((s) => s.mismatches);
+  const units = useStore((s) => s.units);
   const setView = useStore((s) => s.setView);
   const openDrawer = useStore((s) => s.openDrawer);
 
@@ -16,7 +17,8 @@ export default function Dashboard() {
     <>
       <h2>Checklist health</h2>
       <p className="sub">
-        Last WorkRight scrape ran Monday 14 Sep 2026, 06:00. {checks.length} checks across 4 units and 28 documents.
+        Last WorkRight scrape ran Monday 14 Sep 2026, 06:00. {checks.length} checks across {units.length} unit
+        {units.length !== 1 ? 's' : ''} and {units.length * 7} documents.
       </p>
 
       <div className="stats">
@@ -41,7 +43,7 @@ export default function Dashboard() {
       <div className="grid2">
         <div className="panel">
           <h3>Sync by unit</h3>
-          {UNITS.map((u) => {
+          {units.map((u) => {
             const a = [0, 0, 0];
             checks.forEach((c) =>
               c.rows.forEach((r) => {
@@ -88,7 +90,7 @@ export default function Dashboard() {
                       openDrawer(m.check);
                     }}
                   >
-                    {checks[m.check].n.slice(0, 60)}…
+                    {getCheck(checks, m.check)!.n.slice(0, 60)}…
                   </a>
                 </div>
               </div>

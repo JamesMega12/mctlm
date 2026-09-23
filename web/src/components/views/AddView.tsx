@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useStore } from '../../store/useStore';
-import { UNITS } from '../../lib/constants';
+import { getSection } from '../../lib/derive';
 import type { Group } from '../../types';
 
 type AddType = 'check' | 'unit' | 'service level';
@@ -8,13 +8,16 @@ type AddType = 'check' | 'unit' | 'service level';
 const ADD_TYPES: AddType[] = ['check', 'unit', 'service level'];
 
 /** Add-new landing page. The "check" tab hands off to the same add-check
- * dialog the matrix's section "+" buttons open. Unit and service level are
- * stubs in this demo — same as the original, saveSimple() just toasts and
- * doesn't persist anything. */
+ * dialog the matrix's section "+" buttons open. "Unit" adds a real unit
+ * (mirrors the inline control in the matrix's Units filter row — see
+ * AddUnitDialog) starting with zero checks assigned. "Service level" is
+ * still a stub, same as the original — saveSimple() just toasts. */
 export default function AddView() {
   const checks = useStore((s) => s.checks);
   const sections = useStore((s) => s.sections);
+  const units = useStore((s) => s.units);
   const openAddCheckDialog = useStore((s) => s.openAddCheckDialog);
+  const addUnit = useStore((s) => s.addUnit);
   const pushToast = useStore((s) => s.pushToast);
 
   const [addType, setAddType] = useState<AddType>('check');
@@ -26,7 +29,21 @@ export default function AddView() {
 
   const [name, setName] = useState('');
   const [nameErr, setNameErr] = useState('');
-  const [copyFrom, setCopyFrom] = useState('');
+
+  const handleAddUnit = () => {
+    const v = name.trim();
+    if (!v) {
+      setNameErr('Enter a unit name first.');
+      return;
+    }
+    if (units.includes(v)) {
+      setNameErr('That unit already exists.');
+      return;
+    }
+    addUnit(v);
+    setName('');
+    setNameErr('');
+  };
 
   const handleSaveSimple = () => {
     const v = name.trim();
@@ -75,7 +92,7 @@ export default function AddView() {
               <select value={selectedSection} onChange={(e) => setPkSection(Number(e.target.value))}>
                 {sectionIds.map((sid) => (
                   <option value={sid} key={sid}>
-                    {sections[sid].name}
+                    {getSection(sections, sid)!.name}
                   </option>
                 ))}
               </select>
@@ -105,21 +122,10 @@ export default function AddView() {
               <span className="err">{nameErr}</span>
             </label>
             {addType === 'unit' ? (
-              <>
-                <label className="fld">
-                  <span>Copy checks from</span>
-                  <select value={copyFrom} onChange={(e) => setCopyFrom(e.target.value)}>
-                    <option value="">Start empty</option>
-                    {UNITS.map((u) => (
-                      <option key={u}>CPF-{u}</option>
-                    ))}
-                  </select>
-                </label>
-                <p className="muted" style={{ margin: 0, fontSize: 14 }}>
-                  Copying creates pending rows for every check the source unit uses, so you can review before entering
-                  them in WorkRight.
-                </p>
-              </>
+              <p className="muted" style={{ margin: 0, fontSize: 14 }}>
+                New units start with no checks assigned — tick the ones that apply straight from the matrix
+                afterward.
+              </p>
             ) : (
               <>
                 <label className="fld">
@@ -136,7 +142,7 @@ export default function AddView() {
               </>
             )}
             <div>
-              <button className="btn" onClick={handleSaveSimple}>
+              <button className="btn" onClick={addType === 'unit' ? handleAddUnit : handleSaveSimple}>
                 Add {addType}
               </button>
             </div>

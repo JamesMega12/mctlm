@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable, { type CellInput, type RowInput } from 'jspdf-autotable';
-import { GOF, SLNAME, SLS, TODAY, UNITS } from './constants';
-import { status } from './derive';
+import { GOF, SLNAME, SLS, TODAY } from './constants';
+import { getSection, status } from './derive';
 import type { Check, Group, Section, ServiceLevel, SyncStatus, Unit } from '../types';
 
 export interface ExportFilters {
@@ -14,6 +14,7 @@ export interface ExportFilters {
 export interface ExportPdfArgs {
   checks: Check[];
   sections: Section[];
+  units: Unit[];
   expU: Unit[];
   expL: ServiceLevel[];
   expGrp: 'unit' | 'level';
@@ -64,12 +65,12 @@ function baseMatchNoGroup(c: Check, g: Group, filters: ExportFilters): boolean {
 /** Builds one page per unit x service-level document and saves the PDF.
  * Returns the number of document pages produced. */
 export async function exportPdf(args: ExportPdfArgs): Promise<{ pairs: number }> {
-  const { checks, sections, expU, expL, expGrp, expAns, filters } = args;
+  const { checks, sections, units, expU, expL, expGrp, expAns, filters } = args;
 
   const dl = await getDownloadsCapability();
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
 
-  const us = UNITS.filter((u) => expU.includes(u));
+  const us = units.filter((u) => expU.includes(u));
   const ls = SLS.filter((s) => expL.includes(s));
 
   const pairs: [Unit, ServiceLevel][] = [];
@@ -95,7 +96,7 @@ export async function exportPdf(args: ExportPdfArgs): Promise<{ pairs: number }>
     doc.setTextColor(90);
     doc.text(
       pdfSafe(
-        `${list.length} checks${filters.fsec !== '' ? ' · section: ' + sections[filters.fsec].name : ''}${filters.q ? ' · search: "' + filters.q + '"' : ''}${filters.fst ? ' · status: ' + filters.fst : ''} · generated ${TODAY}`,
+        `${list.length} checks${filters.fsec !== '' ? ' · section: ' + getSection(sections, filters.fsec)!.name : ''}${filters.q ? ' · search: "' + filters.q + '"' : ''}${filters.fst ? ' · status: ' + filters.fst : ''} · generated ${TODAY}`,
       ),
       36,
       56,
@@ -111,7 +112,7 @@ export async function exportPdf(args: ExportPdfArgs): Promise<{ pairs: number }>
     list.forEach((c) => {
       if (c.s !== last) {
         last = c.s;
-        const sc = sections[c.s];
+        const sc = getSection(sections, c.s)!;
         body.push([
           {
             content: pdfSafe(sc.name + (g !== 'SL0' && sc.wo ? '  (' + sc.wo + ')' : '')),

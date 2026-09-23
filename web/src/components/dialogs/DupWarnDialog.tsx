@@ -1,6 +1,7 @@
 import { useStore } from '../../store/useStore';
 import type { DupWarnPayload } from '../../store/useStore';
 import { SLNAME } from '../../lib/constants';
+import { getCheck, getSection } from '../../lib/derive';
 
 export default function DupWarnDialog({ payload }: { payload: DupWarnPayload }) {
   const checks = useStore((s) => s.checks);
@@ -10,7 +11,7 @@ export default function DupWarnDialog({ payload }: { payload: DupWarnPayload }) 
   const openDrawer = useStore((s) => s.openDrawer);
   const backToAddForm = useStore((s) => s.backToAddForm);
 
-  const match = checks[payload.matchCheckId];
+  const match = getCheck(checks, payload.matchCheckId)!;
   const shownRows = match.rows
     .slice(0, 4)
     .map((r) => `CPF-${r.u} ${SLNAME(r.s)}`)
@@ -28,7 +29,7 @@ export default function DupWarnDialog({ payload }: { payload: DupWarnPayload }) 
       <div className="warn">
         <b>{match.n}</b>
         <div className="muted" style={{ marginTop: 4 }}>
-          {sections[match.s].name} &middot; in {shownRows}
+          {getSection(sections, match.s)!.name} &middot; in {shownRows}
           {extra}
         </div>
       </div>

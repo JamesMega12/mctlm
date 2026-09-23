@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
-import { GROUPS, ME, SLNAME, TODAY, UNITS } from '../lib/constants';
+import { DEFAULT_UNITS, GROUPS, ME, SLNAME, TODAY } from '../lib/constants';
+import { getCheck, getSection } from '../lib/derive';
 import { buildInitialState } from '../lib/init';
 import { RAW } from '../data/checklist-data';
 import type {
@@ -28,6 +29,8 @@ export type ModalState =
   | { kind: 'addCheck'; sectionId: number }
   | { kind: 'dupWarn'; payload: DupWarnPayload }
   | { kind: 'export' }
+  | { kind: 'addSection'; g: Group }
+  | { kind: 'addUnit' }
   | null;
 
 interface StoreState {
@@ -35,6 +38,12 @@ interface StoreState {
   checks: Check[];
   sections: Section[];
   mismatches: Mismatch[];
+  units: Unit[];
+  // Monotonic id counters — never reused, even across deletions, so a
+  // check/section's `.id` always uniquely and stably identifies it. See
+  // lib/derive.ts's getCheck/getSection.
+  nextCheckId: number;
+  nextSectionId: number;
 
   // --- navigation ---
   view: View;
@@ -50,9 +59,11 @@ interface StoreState {
   onlyCols: boolean;
   openRow: number | null;
 
-  // --- drawer ---
+  // --- drawer (check and section drawers share one DOM slot — only one of
+  // drawerId / sectionDrawerId is ever non-null at a time) ---
   drawerId: number | null;
   editing: boolean;
+  sectionDrawerId: number | null;
 
   // --- modal ---
   modal: ModalState;
@@ -86,9 +97,24 @@ interface StoreState {
   saveEdit: (id: number, form: { n: string; c: string; swi: boolean; o: Option[] }) => void;
   toggleUse: (id: number, u: Unit, s: ServiceLevel) => void;
 
+  openSectionDrawer: (id: number) => void;
+  closeSectionDrawer: () => void;
+  /** Assumes the caller already validated name/wo (non-empty) — see
+   * AddSectionDialog. Returns the new section's id so the caller can open its
+   * drawer or the add-check dialog right after. */
+  addSection: (g: Group, name: string, wo: string) => number;
+  updateSection: (id: number, patch: { name?: string; wo?: string }) => void;
+  removeSection: (id: number) => void;
+
+  /** Assumes the caller already validated the name (non-empty, not a
+   * duplicate) — see AddUnitDialog / AddView. */
+  addUnit: (name: string) => void;
+
   openAddCheckDialog: (sectionId: number) => void;
   openDupWarnDialog: (payload: DupWarnPayload) => void;
   backToAddForm: (sectionId: number) => void;
+  openAddSectionDialog: (g: Group) => void;
+  openAddUnitDialog: () => void;
   closeModal: () => void;
   commitNew: (secId: number, n: string, boxes: { u: Unit; s: ServiceLevel }[], o: Option[], swi: boolean) => void;
 
@@ -113,6 +139,9 @@ export const useStore = create<StoreState>()(
     checks: initial.checks,
     sections: initial.sections,
     mismatches: initial.mismatches,
+    units: [...DEFAULT_UNITS],
+    nextCheckId: initial.checks.length,
+    nextSectionId: initial.sections.length,
 
     view: 'dash',
 
@@ -128,6 +157,7 @@ export const useStore = create<StoreState>()(
 
     drawerId: null,
     editing: false,
+    sectionDrawerId: null,
 
     modal: null,
 
@@ -193,6 +223,7 @@ export const useStore = create<StoreState>()(
       set((state) => {
         state.drawerId = id;
         state.editing = edit;
+        state.sectionDrawerId = null;
       }),
 
     closeDrawer: () =>
@@ -206,7 +237,7 @@ export const useStore = create<StoreState>()(
     saveEdit: (id, form) => {
       let toastText = '';
       set((state) => {
-        const c = state.checks[id];
+        const c = getCheck(state.checks, id)!;
         const changes: string[] = [];
         if (form.n !== c.n) {
           changes.push('wording');
@@ -243,7 +274,7 @@ export const useStore = create<StoreState>()(
     toggleUse: (id, u, s) => {
       let toastText = '';
       set((state) => {
-        const c = state.checks[id];
+        const c = getCheck(state.checks, id)!;
         const i = c.rows.findIndex((r) => r.u === u && r.s === s);
         if (i < 0) {
           c.rows.push({ u, s, st: 'pending' });
@@ -262,16 +293,66 @@ export const useStore = create<StoreState>()(
       get().pushToast(toastText);
     },
 
+    openSectionDrawer: (id) =>
+      set((state) => {
+        state.sectionDrawerId = id;
+        state.drawerId = null;
+        state.editing = false;
+      }),
+
+    closeSectionDrawer: () => set((state) => void (state.sectionDrawerId = null)),
+
+    addSection: (g, name, wo) => {
+      let newId = 0;
+      set((state) => {
+        newId = state.nextSectionId++;
+        state.sections.push({ id: newId, name, wo: g === 'SL0' ? 'SL0' : wo });
+      });
+      return newId;
+    },
+
+    updateSection: (id, patch) =>
+      set((state) => {
+        const s = getSection(state.sections, id)!;
+        if (patch.name !== undefined) s.name = patch.name;
+        if (patch.wo !== undefined && s.wo !== 'SL0') s.wo = patch.wo;
+      }),
+
+    removeSection: (id) => {
+      let removedCount = 0;
+      set((state) => {
+        const removedIds = new Set(state.checks.filter((c) => c.s === id).map((c) => c.id));
+        removedCount = removedIds.size;
+        state.checks = state.checks.filter((c) => !removedIds.has(c.id));
+        state.mismatches = state.mismatches.filter((m) => !removedIds.has(m.check));
+        state.sections = state.sections.filter((s) => s.id !== id);
+        if (state.drawerId !== null && removedIds.has(state.drawerId)) {
+          state.drawerId = null;
+          state.editing = false;
+        }
+        state.sectionDrawerId = null;
+        state.openRow = null;
+      });
+      get().pushToast(`Removed section and ${removedCount} check${removedCount !== 1 ? 's' : ''}.`);
+    },
+
+    addUnit: (name) => {
+      set((state) => void state.units.push(name));
+      get().pushToast(`CPF-${name} added. Tick its checks in the matrix to build it up.`);
+    },
+
     openAddCheckDialog: (sectionId) => set((state) => void (state.modal = { kind: 'addCheck', sectionId })),
     openDupWarnDialog: (payload) => set((state) => void (state.modal = { kind: 'dupWarn', payload })),
     backToAddForm: (sectionId) => set((state) => void (state.modal = { kind: 'addCheck', sectionId })),
+    openAddSectionDialog: (g) => set((state) => void (state.modal = { kind: 'addSection', g })),
+    openAddUnitDialog: () => set((state) => void (state.modal = { kind: 'addUnit' })),
     closeModal: () => set((state) => void (state.modal = null)),
 
     commitNew: (secId, n, boxes, o, swi) => {
       let newId = 0;
       set((state) => {
-        const g: Group = state.sections[secId].wo === 'SL0' ? 'SL0' : 'SL1/3/4';
-        newId = state.checks.length;
+        const g: Group = getSection(state.sections, secId)!.wo === 'SL0' ? 'SL0' : 'SL1/3/4';
+        newId = state.nextCheckId++;
         state.checks.push({
           id: newId,
           wr: 'Not in WorkRight yet',
@@ -295,9 +376,9 @@ export const useStore = create<StoreState>()(
 
     resolve: (id, how) => {
       set((state) => {
-        const m = state.mismatches[id];
+        const m = state.mismatches.find((mm) => mm.id === id)!;
         m.done = how + ' · ' + ME + ', 17 Sep';
-        const c = state.checks[m.check];
+        const c = getCheck(state.checks, m.check)!;
         const r = c.rows.find((row) => row.u === m.u && row.s === m.s);
         if (r) r.st = how.startsWith('Keep') ? 'pending' : 'synced';
         c.history.push({ t: TODAY, who: ME, what: 'Resolved drift: ' + how });
@@ -307,7 +388,7 @@ export const useStore = create<StoreState>()(
 
     simSync: (id, u, s) => {
       set((state) => {
-        const c = state.checks[id];
+        const c = getCheck(state.checks, id)!;
         const r = c.rows.find((row) => row.u === u && row.s === s);
         if (r) r.st = 'synced';
         c.history.push({ t: '2026-09-21', who: 'Weekly scrape', what: `Found in CPF-${u} ${SLNAME(s)}, now synced` });
@@ -317,7 +398,7 @@ export const useStore = create<StoreState>()(
 
     openExportDialog: () =>
       set((state) => {
-        if (!state.expU) state.expU = state.fu.length ? [...state.fu] : [...UNITS];
+        if (!state.expU) state.expU = state.fu.length ? [...state.fu] : [...state.units];
         if (!state.expL) state.expL = state.fs.length ? [...state.fs] : [...GROUPS[state.mg]];
         state.modal = { kind: 'export' };
       }),

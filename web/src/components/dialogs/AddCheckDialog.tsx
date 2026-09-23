@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../../store/useStore';
-import { GROUPS, SLNAME, UNITS } from '../../lib/constants';
+import { GROUPS, SLNAME } from '../../lib/constants';
+import { getSection } from '../../lib/derive';
 import { sim } from '../../lib/text';
 import type { Option, ServiceLevel, Unit } from '../../types';
 
@@ -18,12 +19,13 @@ const docKey = (u: Unit, s: ServiceLevel) => `${u}|${s}`;
 export default function AddCheckDialog({ sectionId }: { sectionId: number }) {
   const sections = useStore((s) => s.sections);
   const checks = useStore((s) => s.checks);
+  const units = useStore((s) => s.units);
   const commitNew = useStore((s) => s.commitNew);
   const openDupWarnDialog = useStore((s) => s.openDupWarnDialog);
   const closeModal = useStore((s) => s.closeModal);
   const openDrawer = useStore((s) => s.openDrawer);
 
-  const section = sections[sectionId];
+  const section = getSection(sections, sectionId)!;
   const group = section.wo === 'SL0' ? 'SL0' : 'SL1/3/4';
   const levels = GROUPS[group];
 
@@ -184,7 +186,7 @@ export default function AddCheckDialog({ sectionId }: { sectionId: number }) {
                     <th key={x}>{x}</th>
                   ))}
                 </tr>
-                {UNITS.map((u) => (
+                {units.map((u) => (
                   <tr key={u}>
                     <td>CPF-{u}</td>
                     {levels.map((x) => (

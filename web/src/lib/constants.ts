@@ -1,6 +1,8 @@
 import type { Group, ServiceLevel, Unit } from '../types';
 
-export const UNITS: Unit[] = ['376/377', '577', '573', '870'];
+// Seed list only — the live, user-extensible unit list is store.units. Kept
+// here just to initialize the store; don't import this for rendering.
+export const DEFAULT_UNITS: Unit[] = ['376/377', '577', '573', '870'];
 
 export const GROUPS: Record<Group, ServiceLevel[]> = {
   SL0: ['Outgoing', 'Rigup', 'RigDown', 'Incoming'],

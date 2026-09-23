@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useStore } from '../../store/useStore';
-import { GROUPS, UNITS } from '../../lib/constants';
+import { GROUPS } from '../../lib/constants';
 import { exportPdf, type PdfError } from '../../lib/pdf';
 import type { ServiceLevel, Unit } from '../../types';
 
 export default function ExportDialog() {
-  const expU = useStore((s) => s.expU) ?? UNITS;
+  const units = useStore((s) => s.units);
+  const expU = useStore((s) => s.expU) ?? units;
   const expL = useStore((s) => s.expL) ?? GROUPS.SL0;
   const expGrp = useStore((s) => s.expGrp);
   const expAns = useStore((s) => s.expAns);
@@ -35,6 +36,7 @@ export default function ExportDialog() {
       const result = await exportPdf({
         checks,
         sections,
+        units,
         expU,
         expL,
         expGrp,
@@ -74,7 +76,7 @@ export default function ExportDialog() {
       <div className="form">
         <div>
           <b>Units</b>
-          <div className="frow">{UNITS.map(unitBox)}</div>
+          <div className="frow">{units.map(unitBox)}</div>
         </div>
         <div>
           <b>Service levels</b>
