@@ -1,28 +1,44 @@
 # Handover
 
-State of the CPF master checklist project as of 17 September 2026.
+State of the CPF master checklist project as of 23 September 2026.
 
 ## Where it stands
 
-A clickable demo of the app, running on the real rev 18 data. It is a
-prototype for stakeholder review, not a foundation to build the product on:
-no backend, no persistence, no scraper. What it does prove is the data model
-and the interactions TLM asked for.
+A clickable demo of the app, running on the real rev 18 data, built in React
++ TypeScript + Vite (`web/`). It is a prototype for stakeholder review, not a
+foundation to build the product on: no backend, no persistence, no scraper.
+What it does prove is the data model and the interactions TLM asked for.
+
+An earlier vanilla-JS build (`app/`) was kept alongside `web/` while the
+rewrite reached feature parity. It has since been removed — `web/` is now the
+only implementation and is ahead of where the vanilla build ever got.
 
 Done:
 
 - Data model validated against the real workbook — checks x units x service
-  levels, with the 28 documents as first-class rows.
+  levels, with documents (unit x service level) as first-class rows.
 - Matrix view with unit set filters: any / all / only / missing.
+- Matrix cells are **directly tickable** — clicking a unit/level dot on a row
+  toggles that check's membership without opening the drawer.
 - Check detail with impact ("this touches 8 documents across 4 units"),
   editable wording, answers, comments and SWI flag.
 - Add a check from any section heading, with look-alike detection and a
   confirm gate before a duplicate is created.
-- Tickable document grid, add and remove.
+- **Section management**: a section detail drawer (rename, view its checks,
+  cascade-remove) and an add-section flow, on both the SL0 and SL1/3/4 tabs.
+- **Units are user-extensible** — add a unit from the Add view or the matrix
+  filter panel; it starts with no checks assigned.
+- Tickable document grid in the check drawer, add and remove.
 - PDF export of any mix of units and levels, one document per page.
 - Review queue for drift and pending items.
 
-Not started: the scraper, any database, authentication, persistence.
+Not started: the scraper, any database, authentication, persistence, real
+tests (no Playwright/Vitest setup exists yet).
+
+Still a stub: **Add Service Level**, in the Add view — it only shows a toast,
+it doesn't add a real column to the matrix. Service levels are structural
+(`GROUPS`/`SLNAME` in `web/src/lib/constants.ts`), so wiring this up is a
+real feature, not a quick fix.
 
 ## The next real piece of work
 
@@ -49,7 +65,7 @@ What the scraper has to produce, by table:
 | `OPTION` | text, order, good/defect | wording drift; the Options 6+ column in the Excel is junk |
 | `UNIT` | unit name, 376/377 as one | may be split in WorkRight |
 | `SERVICE_LEVEL` | SL0 sub-check, SL1/3/4 | naming inconsistency ("RigUp" vs "Rigup") |
-| `UNIT_CHECK_SL` | which checklist each component appears in | needs crawling all 28 checklists, not just the component library |
+| `UNIT_CHECK_SL` | which checklist each component appears in | needs crawling all 28+ checklists, not just the component library |
 | `SECTION` | heading, WO classification | may only exist inside checklist pages |
 
 Also needs: run mechanics (manual vs scheduled, inside a logged-in TLM
@@ -71,7 +87,9 @@ deleted"**.
    every push needs human approval, pushes go one change at a time, and each
    one is verified by re-scraping that record. Build read-and-reconcile first.
 4. **Deleting checks.** Phase 1 is add-only. Delete is probably the last thing
-   to automate, if ever.
+   to automate, if ever. (Note: sections *can* already be removed in the
+   demo, cascading to their checks — that was a deliberate scoped exception,
+   not a sign that check-level delete is now in scope.)
 
 ## Risks worth repeating
 
@@ -99,15 +117,18 @@ meet the same things:
 
 ## If the demo is the starting point
 
-It was built to be thrown away, but the parts worth keeping are:
+`web/` was built to be thrown away as a *frontend*, but the parts worth
+keeping are:
 
-- `tools/extract.py` — especially `docs()`, which parses the InTouch document
-  cell format. The nearest thing to a written spec for it.
 - The data model in ARCHITECTURE.md.
-- The interaction design: the four filter modes and the impact view are the
-  features that make this better than the spreadsheet.
+- The interaction design: the four filter modes, the impact view, and now
+  section management and direct matrix ticking — these are the features
+  that make this better than the spreadsheet.
+- `tools/extract.py`, still recoverable from `cpf-master-checklist_3.zip` at
+  the repo root — especially `docs()`, which parses the InTouch document cell
+  format. The nearest thing to a written spec for it.
 
-Rewrite the rest against a real database. Do not try to grow `app.js` into
-production code — it re-renders everything on every keystroke and holds all
-state in module variables, which is fine for 604 rows and a demo, and wrong
-for anything with a backend.
+Rewrite the data layer against a real database and add a backend. Do not try
+to grow the Zustand store into a production data layer — it holds all state
+as plain in-memory objects with no persistence, which is fine for 604 rows
+and a demo, and wrong for anything with a backend.
