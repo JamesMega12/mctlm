@@ -8,7 +8,6 @@ import SectionDrawer from './components/SectionDrawer';
 import Dashboard from './components/views/Dashboard';
 import Matrix from './components/views/Matrix';
 import AddView from './components/views/AddView';
-import ReviewQueue from './components/views/ReviewQueue';
 
 export default function App() {
   const view = useStore((s) => s.view);
@@ -44,7 +43,6 @@ export default function App() {
           {view === 'dash' && <Dashboard />}
           {view === 'matrix' && <Matrix />}
           {view === 'add' && <AddView />}
-          {view === 'review' && <ReviewQueue />}
         </main>
       </div>
 

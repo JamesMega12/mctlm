@@ -1,24 +1,22 @@
 import { useStore } from '../../store/useStore';
-import { SLNAME } from '../../lib/constants';
-import { counts, getCheck } from '../../lib/derive';
+import { allLevels as flattenLevels, SLNAME } from '../../lib/constants';
 
 export default function Dashboard() {
   const checks = useStore((s) => s.checks);
-  const mismatches = useStore((s) => s.mismatches);
+  const sections = useStore((s) => s.sections);
   const units = useStore((s) => s.units);
+  const levelMap = useStore((s) => s.levels);
   const setView = useStore((s) => s.setView);
-  const openDrawer = useStore((s) => s.openDrawer);
 
-  const k = counts(checks);
-
-  const openDrift = mismatches.filter((m) => !m.done).slice(0, 5);
+  const allLevels = flattenLevels(levelMap);
+  const docCount = units.length * allLevels.length;
+  const rowCount = checks.reduce((n, c) => n + c.rows.length, 0);
 
   return (
     <>
-      <h2>Checklist health</h2>
+      <h2>Checklist overview</h2>
       <p className="sub">
-        Last WorkRight scrape ran Monday 14 Sep 2026, 06:00. {checks.length} checks across {units.length} unit
-        {units.length !== 1 ? 's' : ''} and {units.length * 7} documents.
+        {checks.length} checks across {units.length} unit{units.length !== 1 ? 's' : ''} and {docCount} documents.
       </p>
 
       <div className="stats">
@@ -26,81 +24,56 @@ export default function Dashboard() {
           <b>{checks.length}</b>
           <span>Checks in master</span>
         </div>
-        <div className="panel stat ok">
-          <b>{k.s}</b>
-          <span>Document rows in sync</span>
+        <div className="panel stat">
+          <b>{sections.length}</b>
+          <span>Sections</span>
         </div>
-        <div className="panel stat pend">
-          <b>{k.p}</b>
-          <span>Waiting for WorkRight entry</span>
+        <div className="panel stat">
+          <b>{units.length}</b>
+          <span>Units</span>
         </div>
-        <div className="panel stat drift">
-          <b>{k.d}</b>
-          <span>Differ from WorkRight</span>
+        <div className="panel stat">
+          <b>{rowCount}</b>
+          <span>Document rows ticked</span>
         </div>
       </div>
 
       <div className="grid2">
         <div className="panel">
-          <h3>Sync by unit</h3>
+          <h3>Checks by unit</h3>
           {units.map((u) => {
-            const a = [0, 0, 0];
-            checks.forEach((c) =>
-              c.rows.forEach((r) => {
-                if (r.u === u) a[r.st === 'synced' ? 0 : r.st === 'pending' ? 1 : 2]++;
-              }),
-            );
-            const t = a[0] + a[1] + a[2] || 1;
+            const n = checks.filter((c) => c.rows.some((r) => r.u === u)).length;
             return (
               <div className="bar" key={u}>
                 <b>CPF-{u}</b>
                 <div className="track">
-                  <i style={{ width: `${(a[0] / t) * 100}%`, background: 'var(--ok)' }} />
-                  <i style={{ width: `${Math.max((a[1] / t) * 100, a[1] ? 1.5 : 0)}%`, background: 'var(--pend)' }} />
-                  <i style={{ width: `${Math.max((a[2] / t) * 100, a[2] ? 1.5 : 0)}%`, background: 'var(--drift)' }} />
+                  <i style={{ width: `${(n / (checks.length || 1)) * 100}%`, background: 'var(--steel)' }} />
                 </div>
-                <span className="muted">{t}</span>
+                <span className="muted">{n}</span>
               </div>
             );
           })}
-          <div className="legend" style={{ marginTop: 12 }}>
-            <span>
-              <i className="dot synced" /> Synced
-            </span>
-            <span>
-              <i className="dot pending" /> Pending
-            </span>
-            <span>
-              <i className="dot drift" /> Drift
-            </span>
-          </div>
         </div>
 
         <div className="panel">
-          <h3>Needs attention</h3>
-          {openDrift.length ? (
-            openDrift.map((m) => (
-              <div className="log" key={m.id}>
-                <div>
-                  <span className="pill drift">Drift</span> CPF-{m.u} {SLNAME(m.s)} ·{' '}
-                  <a
-                    href="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      openDrawer(m.check);
-                    }}
-                  >
-                    {getCheck(checks, m.check)!.n.slice(0, 60)}…
-                  </a>
-                </div>
+          <h3>Checks by service level</h3>
+          {allLevels.map((s) => (
+            <div className="bar" key={s}>
+              <b>{SLNAME(s, levelMap)}</b>
+              <div className="track">
+                <i
+                  style={{
+                    width: `${(checks.filter((c) => c.rows.some((r) => r.s === s)).length / (checks.length || 1)) * 100}%`,
+                    background: 'var(--steel)',
+                  }}
+                />
               </div>
-            ))
-          ) : (
-            <p className="muted">No open drift.</p>
-          )}
+              <span className="muted">{checks.filter((c) => c.rows.some((r) => r.s === s)).length}</span>
+            </div>
+          ))}
           <p style={{ marginTop: 12 }}>
-            <button className="btn ghost" onClick={() => setView('review')}>
-              Open review queue
+            <button className="btn ghost" onClick={() => setView('matrix')}>
+              Open matrix view
             </button>
           </p>
         </div>

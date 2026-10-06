@@ -1,20 +1,20 @@
 import { jsPDF } from 'jspdf';
 import autoTable, { type CellInput, type RowInput } from 'jspdf-autotable';
-import { GOF, SLNAME, SLS, TODAY } from './constants';
-import { getSection, status } from './derive';
-import type { Check, Group, Section, ServiceLevel, SyncStatus, Unit } from '../types';
+import { allLevels, GOF, SLNAME, TODAY } from './constants';
+import { getSection } from './derive';
+import type { Check, Group, LevelMap, Section, ServiceLevel, Unit } from '../types';
 
 export interface ExportFilters {
   mg: Group;
   q: string;
   fsec: number | '';
-  fst: SyncStatus | '';
 }
 
 export interface ExportPdfArgs {
   checks: Check[];
   sections: Section[];
   units: Unit[];
+  levelMap: LevelMap;
   expU: Unit[];
   expL: ServiceLevel[];
   expGrp: 'unit' | 'level';
@@ -57,21 +57,20 @@ function baseMatchNoGroup(c: Check, g: Group, filters: ExportFilters): boolean {
   const ql = filters.q.toLowerCase();
   return (
     (!ql || c.n.toLowerCase().includes(ql)) &&
-    (g !== filters.mg || filters.fsec === '' || c.s === filters.fsec) &&
-    (!filters.fst || status(c) === filters.fst)
+    (g !== filters.mg || filters.fsec === '' || c.s === filters.fsec)
   );
 }
 
 /** Builds one page per unit x service-level document and saves the PDF.
  * Returns the number of document pages produced. */
 export async function exportPdf(args: ExportPdfArgs): Promise<{ pairs: number }> {
-  const { checks, sections, units, expU, expL, expGrp, expAns, filters } = args;
+  const { checks, sections, units, levelMap, expU, expL, expGrp, expAns, filters } = args;
 
   const dl = await getDownloadsCapability();
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
 
   const us = units.filter((u) => expU.includes(u));
-  const ls = SLS.filter((s) => expL.includes(s));
+  const ls = allLevels(levelMap).filter((s) => expL.includes(s));
 
   const pairs: [Unit, ServiceLevel][] = [];
   if (expGrp === 'unit') us.forEach((u) => ls.forEach((s) => pairs.push([u, s])));
@@ -79,7 +78,7 @@ export async function exportPdf(args: ExportPdfArgs): Promise<{ pairs: number }>
 
   let first = true;
   pairs.forEach(([u, s]) => {
-    const g = GOF(s);
+    const g = GOF(s, levelMap);
     const list = checks.filter(
       (c) => c.g === g && baseMatchNoGroup(c, g, filters) && c.rows.some((r) => r.u === u && r.s === s),
     );
@@ -89,14 +88,14 @@ export async function exportPdf(args: ExportPdfArgs): Promise<{ pairs: number }>
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(15);
-    doc.text(`CPF-${u} · ${SLNAME(s)} checklist`, 36, 40);
+    doc.text(`CPF-${u} · ${SLNAME(s, levelMap)} checklist`, 36, 40);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.setTextColor(90);
     doc.text(
       pdfSafe(
-        `${list.length} checks${filters.fsec !== '' ? ' · section: ' + getSection(sections, filters.fsec)!.name : ''}${filters.q ? ' · search: "' + filters.q + '"' : ''}${filters.fst ? ' · status: ' + filters.fst : ''} · generated ${TODAY}`,
+        `${list.length} checks${filters.fsec !== '' ? ' · section: ' + getSection(sections, filters.fsec)!.name : ''}${filters.q ? ' · search: "' + filters.q + '"' : ''} · generated ${TODAY}`,
       ),
       36,
       56,
@@ -133,7 +132,7 @@ export async function exportPdf(args: ExportPdfArgs): Promise<{ pairs: number }>
     });
 
     if (!list.length) {
-      body.push([{ content: `No checks in CPF-${u} ${SLNAME(s)} match the current filters.`, colSpan: colCount }]);
+      body.push([{ content: `No checks in CPF-${u} ${SLNAME(s, levelMap)} match the current filters.`, colSpan: colCount }]);
     }
 
     autoTable(doc, {
@@ -163,7 +162,7 @@ export async function exportPdf(args: ExportPdfArgs): Promise<{ pairs: number }>
   const filename =
     (us.length === 1 ? `CPF-${us[0]}` : `CPF ${us.length} units`) +
     ' ' +
-    (ls.length <= 3 ? ls.map(SLNAME).join(' ') : `${ls.length} levels`) +
+    (ls.length <= 3 ? ls.map((s) => SLNAME(s, levelMap)).join(' ') : `${ls.length} levels`) +
     ' checklist.pdf';
 
   if (dl) await dl.save({ filename, data: doc.output('blob') });

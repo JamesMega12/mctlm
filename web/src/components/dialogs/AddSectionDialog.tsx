@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useStore } from '../../store/useStore';
+import { groupLabel } from '../../lib/constants';
 import type { Group } from '../../types';
 
 /** Add-section form. SL0 sections don't need a WO label (always fixed to
@@ -40,7 +41,7 @@ export default function AddSectionDialog({ g }: { g: Group }) {
   return (
     <>
       <h3 style={{ fontSize: 20, margin: '0 0 12px' }}>
-        Add a section to {isSL0 ? 'SL0 checks' : 'SL1, 3 & 4 tasks'}
+        Add a section to {groupLabel(g)}
       </h3>
       <div className="form">
         <label className="fld">

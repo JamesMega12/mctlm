@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store/useStore';
-import { getSection, status } from '../lib/derive';
+import { getSection } from '../lib/derive';
 
 /** Section detail drawer: view/rename the section, list every check in it
  * (with a link to that check's own drawer), add a check to it, and remove
@@ -96,10 +96,8 @@ export default function SectionDrawer({ id }: { id: number }) {
         {sectionChecks.length ? (
           <div className="log">
             {sectionChecks.map((c) => {
-              const st = status(c);
               return (
                 <div key={c.id}>
-                  <span className={`pill ${st}`}>{st[0].toUpperCase() + st.slice(1)}</span>{' '}
                   <a
                     href="#"
                     onClick={(e) => {

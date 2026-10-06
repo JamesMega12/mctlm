@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../../store/useStore';
-import { GROUPS, SLNAME } from '../../lib/constants';
+import { SLNAME } from '../../lib/constants';
 import { getSection } from '../../lib/derive';
 import { sim } from '../../lib/text';
 import type { Option, ServiceLevel, Unit } from '../../types';
@@ -20,6 +20,7 @@ export default function AddCheckDialog({ sectionId }: { sectionId: number }) {
   const sections = useStore((s) => s.sections);
   const checks = useStore((s) => s.checks);
   const units = useStore((s) => s.units);
+  const levelMap = useStore((s) => s.levels);
   const commitNew = useStore((s) => s.commitNew);
   const openDupWarnDialog = useStore((s) => s.openDupWarnDialog);
   const closeModal = useStore((s) => s.closeModal);
@@ -27,7 +28,7 @@ export default function AddCheckDialog({ sectionId }: { sectionId: number }) {
 
   const section = getSection(sections, sectionId)!;
   const group = section.wo === 'SL0' ? 'SL0' : 'SL1/3/4';
-  const levels = GROUPS[group];
+  const levels = levelMap[group];
 
   const [n, setN] = useState('');
   const [options, setOptions] = useState<Option[]>(group === 'SL0' ? DEFAULT_SL0_OPTIONS : []);
@@ -193,7 +194,7 @@ export default function AddCheckDialog({ sectionId }: { sectionId: number }) {
                       <td key={x}>
                         <input
                           type="checkbox"
-                          aria-label={`CPF-${u} ${SLNAME(x)}`}
+                          aria-label={`CPF-${u} ${SLNAME(x, levelMap)}`}
                           checked={docs.has(docKey(u, x))}
                           onChange={() => toggleDoc(u, x)}
                         />

@@ -23,6 +23,7 @@ interface Props {
  * document directly, without opening the drawer. */
 export default function MatrixRow({ checkId, us, ss, span, isOpen, mg, fs, units }: Props) {
   const c = useStore((s) => getCheck(s.checks, checkId));
+  const levelMap = useStore((s) => s.levels);
   const toggleOpenRow = useStore((s) => s.toggleOpenRow);
   const openDrawer = useStore((s) => s.openDrawer);
   const toggleUse = useStore((s) => s.toggleUse);
@@ -30,7 +31,7 @@ export default function MatrixRow({ checkId, us, ss, span, isOpen, mg, fs, units
 
   if (!c) return null;
 
-  const levelFilters = { fs, mg };
+  const levelFilters = { fs, mg, levelMap };
   // Always counted against every unit, independent of which unit columns are
   // currently shown by the "show selected columns only" toggle.
   const unitCount = units.filter((u) => has(c, u, levelFilters)).length;
@@ -81,13 +82,13 @@ export default function MatrixRow({ checkId, us, ss, span, isOpen, mg, fs, units
             return (
               <td className={i === 0 ? 'gl' : undefined} key={u + s}>
                 <button
-                  className={`dot ${r ? r.st : 'none'}`}
+                  className={`dot ${r ? 'on' : 'none'}`}
                   onClick={(e) => {
                     e.stopPropagation();
                     toggleUse(checkId, u, s);
                   }}
                   aria-pressed={!!r}
-                  title={`CPF-${u} ${SLNAME(s)}: ${r ? r.st + ' — click to remove' : 'not in document — click to add'}`}
+                  title={`CPF-${u} ${SLNAME(s, levelMap)}: ${r ? 'in document — click to remove' : 'not in document — click to add'}`}
                 />
               </td>
             );
@@ -111,7 +112,7 @@ export default function MatrixRow({ checkId, us, ss, span, isOpen, mg, fs, units
               ) : (
                 <div className="muted">
                   No answer options in the source for this task.{' '}
-                  {c.g === 'SL0' ? '' : 'SL1, 3 and 4 tasks have none in the ACP export.'}
+                  {c.g === 'SL1/3/4' ? 'SL1, 3 and 4 tasks have none in the ACP export.' : ''}
                 </div>
               )}
               <div className="detfoot">

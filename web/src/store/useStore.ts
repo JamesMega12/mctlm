@@ -1,17 +1,16 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
-import { DEFAULT_UNITS, GROUPS, ME, SLNAME, TODAY } from '../lib/constants';
-import { getCheck, getSection } from '../lib/derive';
+import { DEFAULT_LEVELS, DEFAULT_UNITS, ME, SLNAME, TODAY } from '../lib/constants';
+import { getCheck, getSection, suggestDocs } from '../lib/derive';
 import { buildInitialState } from '../lib/init';
 import { RAW } from '../data/checklist-data';
 import type {
   Check,
   Group,
-  Mismatch,
+  LevelMap,
   Option,
   Section,
   ServiceLevel,
-  SyncStatus,
   Unit,
   UnitMatchMode,
   View,
@@ -37,8 +36,9 @@ interface StoreState {
   // --- data ---
   checks: Check[];
   sections: Section[];
-  mismatches: Mismatch[];
   units: Unit[];
+  addedUnits: Unit[]; // units created in the app, not seeded — see MatrixFilters.addedUnits
+  levels: LevelMap;
   // Monotonic id counters — never reused, even across deletions, so a
   // check/section's `.id` always uniquely and stably identifies it. See
   // lib/derive.ts's getCheck/getSection.
@@ -52,7 +52,6 @@ interface StoreState {
   mg: Group;
   q: string;
   fsec: number | '';
-  fst: SyncStatus | '';
   fu: Unit[];
   fs: ServiceLevel[];
   mode: UnitMatchMode;
@@ -82,7 +81,6 @@ interface StoreState {
   setGroup: (g: Group) => void;
   setSearch: (q: string) => void;
   setSectionFilter: (fsec: number | '') => void;
-  setStatusFilter: (fst: SyncStatus | '') => void;
   toggleUnitFilter: (u: Unit) => void;
   toggleLevelFilter: (s: ServiceLevel) => void;
   setUnitMode: (mode: UnitMatchMode) => void;
@@ -105,10 +103,18 @@ interface StoreState {
   addSection: (g: Group, name: string, wo: string) => number;
   updateSection: (id: number, patch: { name?: string; wo?: string }) => void;
   removeSection: (id: number) => void;
+  /** Deletes one check and closes its drawer. The caller confirms first (see Drawer.tsx). */
+  removeCheck: (id: number) => void;
 
   /** Assumes the caller already validated the name (non-empty, not a
    * duplicate) — see AddUnitDialog / AddView. */
-  addUnit: (name: string) => void;
+  addUnit: (name: string, prefill?: boolean) => void;
+
+  /** Assumes the caller already validated the name (non-empty, not a
+   * duplicate across all groups) — see AddView. If `g` isn't an existing
+   * group it's created, as a new matrix tab. New levels start empty:
+   * a new column for every unit, no checks ticked. */
+  addLevel: (g: Group, name: string) => void;
 
   openAddCheckDialog: (sectionId: number) => void;
   openDupWarnDialog: (payload: DupWarnPayload) => void;
@@ -117,9 +123,6 @@ interface StoreState {
   openAddUnitDialog: () => void;
   closeModal: () => void;
   commitNew: (secId: number, n: string, boxes: { u: Unit; s: ServiceLevel }[], o: Option[], swi: boolean) => void;
-
-  resolve: (id: number, how: string) => void;
-  simSync: (id: number, u: Unit, s: ServiceLevel) => void;
 
   openExportDialog: () => void;
   toggleExportUnit: (u: Unit) => void;
@@ -138,8 +141,9 @@ export const useStore = create<StoreState>()(
   immer((set, get) => ({
     checks: initial.checks,
     sections: initial.sections,
-    mismatches: initial.mismatches,
     units: [...DEFAULT_UNITS],
+    addedUnits: [],
+    levels: { SL0: [...DEFAULT_LEVELS.SL0], 'SL1/3/4': [...DEFAULT_LEVELS['SL1/3/4']] },
     nextCheckId: initial.checks.length,
     nextSectionId: initial.sections.length,
 
@@ -148,7 +152,6 @@ export const useStore = create<StoreState>()(
     mg: 'SL0',
     q: '',
     fsec: '',
-    fst: '',
     fu: [],
     fs: [],
     mode: 'any',
@@ -175,12 +178,11 @@ export const useStore = create<StoreState>()(
         state.mg = g;
         state.fsec = '';
         state.openRow = null;
-        state.fs = state.fs.filter((s) => GROUPS[g].includes(s));
+        state.fs = state.fs.filter((s) => state.levels[g].includes(s));
       }),
 
     setSearch: (q) => set((state) => void (state.q = q)),
     setSectionFilter: (fsec) => set((state) => void (state.fsec = fsec)),
-    setStatusFilter: (fst) => set((state) => void (state.fst = fst)),
 
     toggleUnitFilter: (u) =>
       set((state) => {
@@ -261,12 +263,9 @@ export const useStore = create<StoreState>()(
           toastText = 'No changes to save.';
           return;
         }
-        c.rows.forEach((r) => {
-          if (r.st === 'synced') r.st = 'pending';
-        });
-        c.history.push({ t: TODAY, who: ME, what: 'Edited ' + changes.join(', ') + ' — now pending in WorkRight' });
+        c.history.push({ t: TODAY, who: ME, what: 'Edited ' + changes.join(', ') });
         state.editing = false;
-        toastText = `Saved. ${c.rows.length} document row${c.rows.length > 1 ? 's' : ''} now pending WorkRight entry.`;
+        toastText = 'Saved.';
       });
       get().pushToast(toastText);
     },
@@ -277,17 +276,17 @@ export const useStore = create<StoreState>()(
         const c = getCheck(state.checks, id)!;
         const i = c.rows.findIndex((r) => r.u === u && r.s === s);
         if (i < 0) {
-          c.rows.push({ u, s, st: 'pending' });
-          c.history.push({ t: TODAY, who: ME, what: `Added to CPF-${u} ${SLNAME(s)}` });
-          toastText = `Added to CPF-${u} ${SLNAME(s)}. Enter it in WorkRight to sync.`;
+          c.rows.push({ u, s });
+          c.history.push({ t: TODAY, who: ME, what: `Added to CPF-${u} ${SLNAME(s, state.levels)}` });
+          toastText = `Added to CPF-${u} ${SLNAME(s, state.levels)}.`;
         } else {
           if (c.rows.length === 1) {
-            toastText = 'A check must stay in at least one document. Delete the check instead.';
+            toastText = 'A check must stay in at least one document. Delete the check instead (double-click it, then Delete check).';
             return;
           }
           c.rows.splice(i, 1);
-          c.history.push({ t: TODAY, who: ME, what: `Removed from CPF-${u} ${SLNAME(s)}` });
-          toastText = `Removed from CPF-${u} ${SLNAME(s)}. Remove it in WorkRight too.`;
+          c.history.push({ t: TODAY, who: ME, what: `Removed from CPF-${u} ${SLNAME(s, state.levels)}` });
+          toastText = `Removed from CPF-${u} ${SLNAME(s, state.levels)}.`;
         }
       });
       get().pushToast(toastText);
@@ -306,7 +305,7 @@ export const useStore = create<StoreState>()(
       let newId = 0;
       set((state) => {
         newId = state.nextSectionId++;
-        state.sections.push({ id: newId, name, wo: g === 'SL0' ? 'SL0' : wo });
+        state.sections.push({ id: newId, name, wo: g === 'SL0' ? 'SL0' : wo, g });
       });
       return newId;
     },
@@ -318,13 +317,22 @@ export const useStore = create<StoreState>()(
         if (patch.wo !== undefined && s.wo !== 'SL0') s.wo = patch.wo;
       }),
 
+    removeCheck: (id) => {
+      set((state) => {
+        state.checks = state.checks.filter((c) => c.id !== id);
+        state.drawerId = null;
+        state.editing = false;
+        state.openRow = null;
+      });
+      get().pushToast('Check deleted.');
+    },
+
     removeSection: (id) => {
       let removedCount = 0;
       set((state) => {
         const removedIds = new Set(state.checks.filter((c) => c.s === id).map((c) => c.id));
         removedCount = removedIds.size;
         state.checks = state.checks.filter((c) => !removedIds.has(c.id));
-        state.mismatches = state.mismatches.filter((m) => !removedIds.has(m.check));
         state.sections = state.sections.filter((s) => s.id !== id);
         if (state.drawerId !== null && removedIds.has(state.drawerId)) {
           state.drawerId = null;
@@ -336,9 +344,38 @@ export const useStore = create<StoreState>()(
       get().pushToast(`Removed section and ${removedCount} check${removedCount !== 1 ? 's' : ''}.`);
     },
 
-    addUnit: (name) => {
-      set((state) => void state.units.push(name));
-      get().pushToast(`CPF-${name} added. Tick its checks in the matrix to build it up.`);
+    addUnit: (name, prefill = false) => {
+      let n = 0;
+      set((state) => {
+        if (prefill) {
+          // Computed against the units that existed before this one.
+          suggestDocs(state.checks, state.units).forEach(({ checkId, s }) => {
+            const c = getCheck(state.checks, checkId)!;
+            c.rows.push({ u: name, s });
+            c.history.push({ t: TODAY, who: ME, what: `Pre-filled into CPF-${name} ${SLNAME(s, state.levels)} (smart suggestion)` });
+            n++;
+          });
+        }
+        state.units.push(name);
+        state.addedUnits.push(name);
+      });
+      get().pushToast(
+        prefill
+          ? `CPF-${name} added with ${n} suggested document row${n !== 1 ? 's' : ''}. Untick any that don't apply.`
+          : `CPF-${name} added. Tick its checks in the matrix to build it up.`,
+      );
+    },
+
+    addLevel: (g, name) => {
+      const isNewGroup = !(g in get().levels);
+      set((state) => {
+        (state.levels[g] ??= []).push(name);
+      });
+      get().pushToast(
+        isNewGroup
+          ? `${name} added as a new group with its first service level. Add a section to it from the matrix.`
+          : `${SLNAME(name, get().levels)} added. Tick checks into it from the matrix.`,
+      );
     },
 
     openAddCheckDialog: (sectionId) => set((state) => void (state.modal = { kind: 'addCheck', sectionId })),
@@ -351,18 +388,17 @@ export const useStore = create<StoreState>()(
     commitNew: (secId, n, boxes, o, swi) => {
       let newId = 0;
       set((state) => {
-        const g: Group = getSection(state.sections, secId)!.wo === 'SL0' ? 'SL0' : 'SL1/3/4';
+        const g: Group = getSection(state.sections, secId)!.g;
         newId = state.nextCheckId++;
         state.checks.push({
           id: newId,
-          wr: 'Not in WorkRight yet',
           s: secId,
           n,
           o,
           swi,
           c: '',
           g,
-          rows: boxes.map((b) => ({ u: b.u, s: b.s, st: 'pending' as SyncStatus })),
+          rows: boxes.map((b) => ({ u: b.u, s: b.s })),
           history: [{ t: TODAY, who: ME, what: `Created in ${boxes.length} document${boxes.length > 1 ? 's' : ''}` }],
         });
         state.modal = null;
@@ -371,35 +407,13 @@ export const useStore = create<StoreState>()(
         state.drawerId = newId;
         state.editing = false;
       });
-      get().pushToast(`Added as pending in ${boxes.length} document${boxes.length > 1 ? 's' : ''}. Enter it in WorkRight to sync.`);
-    },
-
-    resolve: (id, how) => {
-      set((state) => {
-        const m = state.mismatches.find((mm) => mm.id === id)!;
-        m.done = how + ' · ' + ME + ', 17 Sep';
-        const c = getCheck(state.checks, m.check)!;
-        const r = c.rows.find((row) => row.u === m.u && row.s === m.s);
-        if (r) r.st = how.startsWith('Keep') ? 'pending' : 'synced';
-        c.history.push({ t: TODAY, who: ME, what: 'Resolved drift: ' + how });
-      });
-      get().pushToast(how.startsWith('Keep') ? 'Kept master. Pending until WorkRight is fixed.' : 'Marked as synced.');
-    },
-
-    simSync: (id, u, s) => {
-      set((state) => {
-        const c = getCheck(state.checks, id)!;
-        const r = c.rows.find((row) => row.u === u && row.s === s);
-        if (r) r.st = 'synced';
-        c.history.push({ t: '2026-09-21', who: 'Weekly scrape', what: `Found in CPF-${u} ${SLNAME(s)}, now synced` });
-      });
-      get().pushToast('Scrape found it. Status is now synced.');
+      get().pushToast(`Added to ${boxes.length} document${boxes.length > 1 ? 's' : ''}.`);
     },
 
     openExportDialog: () =>
       set((state) => {
         if (!state.expU) state.expU = state.fu.length ? [...state.fu] : [...state.units];
-        if (!state.expL) state.expL = state.fs.length ? [...state.fs] : [...GROUPS[state.mg]];
+        if (!state.expL) state.expL = state.fs.length ? [...state.fs] : [...state.levels[state.mg]];
         state.modal = { kind: 'export' };
       }),
 

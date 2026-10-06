@@ -1,18 +1,19 @@
 import type { ReactNode } from 'react';
 import { useStore } from '../../store/useStore';
-import { GROUPS, MODES, SLNAME } from '../../lib/constants';
+import { groupLabel, MODES, SLNAME } from '../../lib/constants';
 import { baseMatch, cols, getSection, summary, unitMatch, type MatrixFilters } from '../../lib/derive';
-import type { SyncStatus, UnitMatchMode } from '../../types';
+import type { UnitMatchMode } from '../../types';
 import MatrixRow from './MatrixRow';
 
 export default function Matrix() {
   const checks = useStore((s) => s.checks);
   const sections = useStore((s) => s.sections);
   const units = useStore((s) => s.units);
+  const levelMap = useStore((s) => s.levels);
+  const addedUnits = useStore((s) => s.addedUnits);
   const mg = useStore((s) => s.mg);
   const q = useStore((s) => s.q);
   const fsec = useStore((s) => s.fsec);
-  const fst = useStore((s) => s.fst);
   const fu = useStore((s) => s.fu);
   const fs = useStore((s) => s.fs);
   const mode = useStore((s) => s.mode);
@@ -22,7 +23,6 @@ export default function Matrix() {
   const setGroup = useStore((s) => s.setGroup);
   const setSearch = useStore((s) => s.setSearch);
   const setSectionFilter = useStore((s) => s.setSectionFilter);
-  const setStatusFilter = useStore((s) => s.setStatusFilter);
   const toggleUnitFilter = useStore((s) => s.toggleUnitFilter);
   const toggleLevelFilter = useStore((s) => s.toggleLevelFilter);
   const setUnitMode = useStore((s) => s.setUnitMode);
@@ -35,8 +35,8 @@ export default function Matrix() {
   const openAddSectionDialog = useStore((s) => s.openAddSectionDialog);
   const openAddUnitDialog = useStore((s) => s.openAddUnitDialog);
 
-  const filters: MatrixFilters = { mg, q, fsec, fst, fu, fs, mode, onlyCols, units };
-  const g = GROUPS[mg];
+  const filters: MatrixFilters = { mg, q, fsec, fu, fs, mode, onlyCols, units, levelMap, addedUnits };
+  const g = levelMap[mg];
   const { us, ss } = cols(filters);
   const span = 2 + us.length * ss.length;
 
@@ -95,12 +95,11 @@ export default function Matrix() {
 
       <div className="toolbar">
         <div className="seg" role="group" aria-label="Checklist">
-          <button aria-pressed={mg === 'SL0'} onClick={() => setGroup('SL0')}>
-            SL0 checks
-          </button>
-          <button aria-pressed={mg !== 'SL0'} onClick={() => setGroup('SL1/3/4')}>
-            SL1, 3 &amp; 4 tasks
-          </button>
+          {Object.keys(levelMap).map((grp) => (
+            <button key={grp} aria-pressed={mg === grp} onClick={() => setGroup(grp)}>
+              {groupLabel(grp)}
+            </button>
+          ))}
         </div>
         <input
           type="search"
@@ -120,11 +119,6 @@ export default function Matrix() {
               {getSection(sections, sid)!.name}
             </option>
           ))}
-        </select>
-        <select value={fst} onChange={(e) => setStatusFilter(e.target.value as SyncStatus | '')} aria-label="Status">
-          <option value="">All statuses</option>
-          <option value="pending">Pending</option>
-          <option value="drift">Drift</option>
         </select>
       </div>
 
@@ -202,7 +196,7 @@ export default function Matrix() {
               {us.map((u) =>
                 ss.map((s, i) => (
                   <th className={i === 0 ? 'u' : undefined} key={u + s}>
-                    <button className="hbtn" onClick={() => colFilter(u, s)} title={`Show only CPF-${u} ${SLNAME(s)}`}>
+                    <button className="hbtn" onClick={() => colFilter(u, s)} title={`Show only CPF-${u} ${SLNAME(s, levelMap)}`}>
                       {s}
                     </button>
                   </th>

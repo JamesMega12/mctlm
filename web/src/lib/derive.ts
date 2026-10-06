@@ -1,12 +1,10 @@
-import { GROUPS } from './constants';
+import { SUGGEST_THRESHOLD } from './constants';
 import type {
   Check,
   Group,
-  Mismatch,
-  PendingRowRef,
+  LevelMap,
   Section,
   ServiceLevel,
-  SyncStatus,
   Unit,
   UnitMatchMode,
 } from '../types';
@@ -26,46 +24,51 @@ export function getSection(sections: Section[], id: number): Section | undefined
 
 /** The matrix's filter/view state — everything `derive` functions need to know
  * which checks and columns are currently in view. Mirrors the module-scope
- * globals (`mg, q, fsec, fst, fu, fs, mode, onlyCols`) from the original demo.
+ * globals (`mg, q, fsec, fu, fs, mode, onlyCols`) from the original demo.
  * `units` is the live, store-owned unit list (user-extensible via addUnit). */
 export interface MatrixFilters {
   mg: Group;
   q: string;
   fsec: number | '';
-  fst: SyncStatus | '';
   fu: Unit[];
   fs: ServiceLevel[];
   mode: UnitMatchMode;
   onlyCols: boolean;
   units: Unit[];
+  /** Live level map from the store (user-extensible via addLevel). */
+  levelMap: LevelMap;
+  /** Units added in the app (not seeded). Selecting one in 'any' mode lists
+   * every check, ticked or not, so the user can pick which belong to it —
+   * and the list doesn't collapse as soon as the first box is ticked. */
+  addedUnits: Unit[];
 }
 
-export function counts(checks: Check[]): { s: number; p: number; d: number } {
-  let s = 0,
-    p = 0,
-    d = 0;
-  checks.forEach((c) =>
-    c.rows.forEach((r) => (r.st === 'synced' ? s++ : r.st === 'pending' ? p++ : d++)),
-  );
-  return { s, p, d };
-}
-
-export function pendList(checks: Check[]): PendingRowRef[] {
-  const out: PendingRowRef[] = [];
-  checks.forEach((c) => c.rows.forEach((r) => r.st === 'pending' && out.push({ c, r })));
+/** Smart suggestion for a new unit: every (check, service level) pair that at
+ * least SUGGEST_THRESHOLD of the existing units already have ticked. */
+export function suggestDocs(checks: Check[], units: Unit[]): { checkId: number; s: ServiceLevel }[] {
+  if (!units.length) return [];
+  const out: { checkId: number; s: ServiceLevel }[] = [];
+  checks.forEach((c) => {
+    const perLevel = new Map<ServiceLevel, Set<Unit>>();
+    c.rows.forEach((r) => {
+      if (!units.includes(r.u)) return;
+      if (!perLevel.has(r.s)) perLevel.set(r.s, new Set());
+      perLevel.get(r.s)!.add(r.u);
+    });
+    perLevel.forEach((us, s) => {
+      if (us.size / units.length >= SUGGEST_THRESHOLD) out.push({ checkId: c.id, s });
+    });
+  });
   return out;
 }
 
-export const status = (c: Check): SyncStatus =>
-  c.rows.some((r) => r.st === 'drift') ? 'drift' : c.rows.some((r) => r.st === 'pending') ? 'pending' : 'synced';
-
 /** Which service levels are in scope: the selected chips, or the whole current group. */
-export function levels(filters: Pick<MatrixFilters, 'fs' | 'mg'>): ServiceLevel[] {
-  return filters.fs.length ? filters.fs : GROUPS[filters.mg];
+export function levels(filters: Pick<MatrixFilters, 'fs' | 'mg' | 'levelMap'>): ServiceLevel[] {
+  return filters.fs.length ? filters.fs : filters.levelMap[filters.mg];
 }
 
 /** Does check `c` appear in unit `u` at one of the in-scope service levels? */
-export function has(c: Check, u: Unit, filters: Pick<MatrixFilters, 'fs' | 'mg'>): boolean {
+export function has(c: Check, u: Unit, filters: Pick<MatrixFilters, 'fs' | 'mg' | 'levelMap'>): boolean {
   const L = levels(filters);
   return c.rows.some((r) => r.u === u && L.includes(r.s));
 }
@@ -75,8 +78,7 @@ export function baseMatch(c: Check, g: Group, filters: MatrixFilters): boolean {
   return (
     c.g === g &&
     (!ql || c.n.toLowerCase().includes(ql)) &&
-    (g !== filters.mg || filters.fsec === '' || c.s === filters.fsec) &&
-    (!filters.fst || status(c) === filters.fst)
+    (g !== filters.mg || filters.fsec === '' || c.s === filters.fsec) 
   );
 }
 
@@ -86,8 +88,7 @@ export function baseMatchNoGroup(c: Check, g: Group, filters: MatrixFilters): bo
   const ql = filters.q.toLowerCase();
   return (
     (!ql || c.n.toLowerCase().includes(ql)) &&
-    (g !== filters.mg || filters.fsec === '' || c.s === filters.fsec) &&
-    (!filters.fst || status(c) === filters.fst)
+    (g !== filters.mg || filters.fsec === '' || c.s === filters.fsec) 
   );
 }
 
@@ -95,7 +96,7 @@ export function unitMatch(c: Check, filters: MatrixFilters): boolean {
   const { fu, mode, units } = filters;
   const others = units.filter((u) => !fu.includes(u));
   if (!fu.length) return units.some((u) => has(c, u, filters));
-  if (mode === 'any') return fu.some((u) => has(c, u, filters));
+  if (mode === 'any') return fu.some((u) => filters.addedUnits.includes(u) || has(c, u, filters));
   if (mode === 'all') return fu.every((u) => has(c, u, filters));
   if (mode === 'only') return fu.every((u) => has(c, u, filters)) && others.every((u) => !has(c, u, filters));
   return fu.every((u) => !has(c, u, filters)) && others.some((u) => has(c, u, filters));
@@ -127,13 +128,9 @@ export function summary(filters: MatrixFilters): SummaryResult {
 /** Which unit/service-level columns to show, given the "show selected columns
  * only" toggle and the current filter chips. */
 export function cols(filters: MatrixFilters): { us: Unit[]; ss: ServiceLevel[] } {
-  const { onlyCols, fu, mode, fs, mg, units } = filters;
+  const { onlyCols, fu, mode, fs, mg, units, levelMap } = filters;
   return {
     us: onlyCols && fu.length && mode !== 'missing' ? units.filter((u) => fu.includes(u)) : units,
-    ss: onlyCols && fs.length ? GROUPS[mg].filter((s) => fs.includes(s)) : GROUPS[mg],
+    ss: onlyCols && fs.length ? levelMap[mg].filter((s) => fs.includes(s)) : levelMap[mg],
   };
-}
-
-export function openMismatches(mismatches: Mismatch[]): Mismatch[] {
-  return mismatches.filter((m) => !m.done);
 }
