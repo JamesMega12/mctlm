@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { useStore } from '../../store/useStore';
-import { GROUPS } from '../../lib/constants';
 import { exportPdf, type PdfError } from '../../lib/pdf';
 import type { ServiceLevel, Unit } from '../../types';
 
 export default function ExportDialog() {
   const units = useStore((s) => s.units);
+  const levelMap = useStore((s) => s.levels);
   const expU = useStore((s) => s.expU) ?? units;
-  const expL = useStore((s) => s.expL) ?? GROUPS.SL0;
+  const expL = useStore((s) => s.expL) ?? levelMap.SL0;
   const expGrp = useStore((s) => s.expGrp);
   const expAns = useStore((s) => s.expAns);
   const toggleExportUnit = useStore((s) => s.toggleExportUnit);
@@ -22,7 +22,6 @@ export default function ExportDialog() {
   const mg = useStore((s) => s.mg);
   const q = useStore((s) => s.q);
   const fsec = useStore((s) => s.fsec);
-  const fst = useStore((s) => s.fst);
 
   const [building, setBuilding] = useState(false);
   const [err, setErr] = useState('');
@@ -37,11 +36,12 @@ export default function ExportDialog() {
         checks,
         sections,
         units,
+        levelMap,
         expU,
         expL,
         expGrp,
         expAns,
-        filters: { mg, q, fsec, fst },
+        filters: { mg, q, fsec },
       });
       closeModal();
       pushToast(`PDF saved · ${result.pairs} document${result.pairs > 1 ? 's' : ''}.`);
@@ -80,8 +80,11 @@ export default function ExportDialog() {
         </div>
         <div>
           <b>Service levels</b>
-          <div className="frow">{GROUPS.SL0.map((s) => levelBox(s, 'SL0 ' + s))}</div>
-          <div className="frow">{GROUPS['SL1/3/4'].map((s) => levelBox(s, s))}</div>
+          {Object.entries(levelMap).map(([grp, ls]) => (
+            <div className="frow" key={grp}>
+              {ls.map((s) => levelBox(s, grp === 'SL0' ? 'SL0 ' + s : s))}
+            </div>
+          ))}
         </div>
         <div className="frow">
           <span className="flabel">Order by</span>
@@ -100,7 +103,7 @@ export default function ExportDialog() {
         </label>
         <p className="muted" style={{ margin: 0, fontSize: 14 }}>
           {docsN
-            ? `${docsN} document${docsN > 1 ? 's' : ''}, one per page. The search, section and status filters in the matrix still apply.`
+            ? `${docsN} document${docsN > 1 ? 's' : ''}, one per page. The search and section filters in the matrix still apply.`
             : 'Pick at least one unit and one service level.'}
         </p>
         <div className="frow">

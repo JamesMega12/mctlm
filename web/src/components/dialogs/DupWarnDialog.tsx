@@ -6,6 +6,7 @@ import { getCheck, getSection } from '../../lib/derive';
 export default function DupWarnDialog({ payload }: { payload: DupWarnPayload }) {
   const checks = useStore((s) => s.checks);
   const sections = useStore((s) => s.sections);
+  const levelMap = useStore((s) => s.levels);
   const commitNew = useStore((s) => s.commitNew);
   const closeModal = useStore((s) => s.closeModal);
   const openDrawer = useStore((s) => s.openDrawer);
@@ -14,7 +15,7 @@ export default function DupWarnDialog({ payload }: { payload: DupWarnPayload }) 
   const match = getCheck(checks, payload.matchCheckId)!;
   const shownRows = match.rows
     .slice(0, 4)
-    .map((r) => `CPF-${r.u} ${SLNAME(r.s)}`)
+    .map((r) => `CPF-${r.u} ${SLNAME(r.s, levelMap)}`)
     .join(', ');
   const extra = match.rows.length > 4 ? ` +${match.rows.length - 4} more` : '';
 
@@ -33,7 +34,7 @@ export default function DupWarnDialog({ payload }: { payload: DupWarnPayload }) 
           {extra}
         </div>
       </div>
-      <p>Adding a duplicate makes the two drift apart in WorkRight. Add the existing check to more documents instead?</p>
+      <p>Adding a duplicate leaves two near-identical checks to keep in step. Add the existing check to more documents instead?</p>
       <div className="frow">
         <button
           className="btn"

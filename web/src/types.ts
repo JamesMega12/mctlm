@@ -8,22 +8,27 @@
 //   Document — one unit at one service level (4 x 7 = 28 documents). Modelled as one
 //              entry in a check's `rows`.
 //   Answer   — a possible response to an SL0 check: good or defect (`bad`).
-//   Sync status — synced | pending | drift. See ARCHITECTURE_3.md record lifecycle.
 
-export type Group = 'SL0' | 'SL1/3/4';
+// A plain string, not a fixed union — groups are user-extensible (see addLevel in
+// the store). Seeded: 'SL0' and 'SL1/3/4'. A group is one matrix tab.
+export type Group = string;
 
-export type ServiceLevel = 'Outgoing' | 'Rigup' | 'RigDown' | 'Incoming' | 'SL1' | 'SL3' | 'SL4';
+// A plain string, not a fixed union — service levels are user-extensible (see
+// addLevel in the store). The seed names are Outgoing/Rigup/RigDown/Incoming
+// (group SL0) and SL1/SL3/SL4 (group SL1/3/4).
+export type ServiceLevel = string;
+
+/** Service levels per group, in tab order. Groups and levels both grow. */
+export type LevelMap = Record<Group, ServiceLevel[]>;
 
 // A plain string, not a fixed union — units are user-extensible (see addUnit in
 // the store), so "376/377" and any later-added unit name are equally valid.
 export type Unit = string;
 
-export type SyncStatus = 'synced' | 'pending' | 'drift';
-
 /** Unit match mode for the matrix filter chips. */
 export type UnitMatchMode = 'any' | 'all' | 'only' | 'missing';
 
-export type View = 'dash' | 'matrix' | 'add' | 'review';
+export type View = 'dash' | 'matrix' | 'add';
 
 /** Raw shape as produced by tools/extract.py and embedded in the old demo. */
 export interface RawCheck {
@@ -57,7 +62,6 @@ export interface Option {
 export interface DocRow {
   u: Unit;
   s: ServiceLevel;
-  st: SyncStatus;
 }
 
 export interface HistoryEntry {
@@ -68,7 +72,6 @@ export interface HistoryEntry {
 
 export interface Check {
   id: number;
-  wr: string; // WorkRight id, e.g. "RC-40210" or "Not in WorkRight yet"
   s: number; // section id
   n: string; // wording
   o: Option[];
@@ -83,21 +86,5 @@ export interface Section {
   id: number;
   name: string;
   wo: string;
-}
-
-export interface Mismatch {
-  id: number;
-  check: number; // check id
-  u: Unit;
-  s: ServiceLevel;
-  type: string;
-  opt: number | null;
-  app: string;
-  wr: string;
-  done: string | null;
-}
-
-export interface PendingRowRef {
-  c: Check;
-  r: DocRow;
+  g: Group; // which group (matrix tab) the section belongs to
 }

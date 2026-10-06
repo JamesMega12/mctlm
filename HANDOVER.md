@@ -1,5 +1,8 @@
 # Handover
 
+> **Superseded in part (Oct 2026):** the app is no longer linked to WorkRight. The sync status model, review queue, scraper plan and write-back discussion below are historical — they were removed from the demo and are not planned. The data model for checks, units, service levels and documents still applies.
+
+
 State of the CPF master checklist project as of 23 September 2026.
 
 ## Where it stands
@@ -35,10 +38,8 @@ Done:
 Not started: the scraper, any database, authentication, persistence, real
 tests (no Playwright/Vitest setup exists yet).
 
-Still a stub: **Add Service Level**, in the Add view — it only shows a toast,
-it doesn't add a real column to the matrix. Service levels are structural
-(`GROUPS`/`SLNAME` in `web/src/lib/constants.ts`), so wiring this up is a
-real feature, not a quick fix.
+**Add Service Level** now works: it adds a level to the SL0 or SL1/3/4 group
+and creates a new matrix column for every unit (no checks ticked). A new group (its own matrix tab) can be created from the same form.
 
 ## The next real piece of work
 

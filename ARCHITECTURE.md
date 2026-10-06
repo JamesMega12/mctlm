@@ -1,5 +1,8 @@
 # Architecture
 
+> **Superseded in part (Oct 2026):** the app is no longer linked to WorkRight. The sync status model, review queue, scraper plan and write-back discussion below are historical — they were removed from the demo and are not planned. The data model for checks, units, service levels and documents still applies.
+
+
 Two things are described here: the **demo that exists** in this repo, and the
 **system it is a prototype of**. Keep them apart when reading.
 

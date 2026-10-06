@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store/useStore';
-import { GROUPS, SLNAME } from '../lib/constants';
-import { getCheck, getSection, status } from '../lib/derive';
+import { SLNAME } from '../lib/constants';
+import { getCheck, getSection } from '../lib/derive';
 import { sim } from '../lib/text';
 import type { Option } from '../types';
 
@@ -11,19 +11,20 @@ import type { Option } from '../types';
 export default function Drawer({ id }: { id: number }) {
   const checks = useStore((s) => s.checks);
   const sections = useStore((s) => s.sections);
-  const mismatches = useStore((s) => s.mismatches);
   const units = useStore((s) => s.units);
+  const levelMap = useStore((s) => s.levels);
   const editing = useStore((s) => s.editing);
   const setEditing = useStore((s) => s.setEditing);
   const closeDrawer = useStore((s) => s.closeDrawer);
   const openDrawer = useStore((s) => s.openDrawer);
   const saveEdit = useStore((s) => s.saveEdit);
+  const removeCheck = useStore((s) => s.removeCheck);
+  const [armed, setArmed] = useState(false);
   const toggleUse = useStore((s) => s.toggleUse);
   const pushToast = useStore((s) => s.pushToast);
 
   const c = getCheck(checks, id)!;
-  const st = status(c);
-  const sl = GROUPS[c.g];
+  const sl = levelMap[c.g];
   const section = getSection(sections, c.s)!;
 
   const [formN, setFormN] = useState(c.n);
@@ -42,6 +43,10 @@ export default function Drawer({ id }: { id: number }) {
     setFormSwi(c.swi);
     setFormOpts(c.o);
   }, [c]);
+
+  useEffect(() => {
+    setArmed(false);
+  }, [id, editing]);
 
   useEffect(() => {
     if (editing) nameRef.current?.focus();
@@ -82,7 +87,6 @@ export default function Drawer({ id }: { id: number }) {
 
       {editing ? (
         <div className="panel">
-          <span className={`pill ${st}`}>{st[0].toUpperCase() + st.slice(1)}</span>
           <label className="fld">
             <span>Check wording</span>
             <textarea rows={3} ref={nameRef} value={formN} onChange={(e) => setFormN(e.target.value)} />
@@ -97,23 +101,35 @@ export default function Drawer({ id }: { id: number }) {
           <div className="meta">
             <span>{section.name}</span>
             {section.wo && section.wo !== 'SL0' && <span>{section.wo}</span>}
-            <span>WorkRight {c.wr}</span>
           </div>
           <div className="frow" style={{ marginTop: 12 }}>
             <button className="btn" onClick={handleSaveClick}>
               Save changes
             </button>
-            <button className="btn ghost" onClick={() => setEditing(false)}>
+            <button className="btn ghost" onClick={() => {
+                setArmed(false);
+                setEditing(false);
+              }}>
               Cancel
             </button>
-            <span className="muted" style={{ fontSize: 13 }}>
-              Saved edits become pending until the scrape finds them in WorkRight.
-            </span>
+          </div>
+          <div className="frow" style={{ marginTop: 12 }}>
+            <button
+              className="btn ghost"
+              style={{ borderColor: 'var(--drift)', color: 'var(--drift)' }}
+              onClick={() => (armed ? removeCheck(id) : setArmed(true))}
+            >
+              {armed ? `Really delete? Click again to remove it from ${c.rows.length} document${c.rows.length !== 1 ? 's' : ''}` : 'Delete check'}
+            </button>
+            {armed && (
+              <button className="btn ghost" onClick={() => setArmed(false)}>
+                Keep it
+              </button>
+            )}
           </div>
         </div>
       ) : (
         <div className="panel">
-          <span className={`pill ${st}`}>{st[0].toUpperCase() + st.slice(1)}</span>
           <button className="btn ghost sm" style={{ float: 'right' }} onClick={() => setEditing(true)}>
             Edit
           </button>
@@ -121,7 +137,6 @@ export default function Drawer({ id }: { id: number }) {
           <div className="meta">
             <span>{section.name}</span>
             {section.wo && section.wo !== 'SL0' && <span>{section.wo}</span>}
-            <span>WorkRight {c.wr}</span>
             <span>SWI {c.swi ? 'needed' : 'not needed'}</span>
           </div>
           {c.c && (
@@ -169,7 +184,6 @@ export default function Drawer({ id }: { id: number }) {
           <table className="opt">
             <tbody>
               {c.o.map((o, i) => {
-                const mm = mismatches.find((m) => m.check === id && m.opt === i && !m.done);
                 return (
                   <tr key={i}>
                     <td style={{ width: 24 }}>{i + 1}</td>
@@ -177,8 +191,7 @@ export default function Drawer({ id }: { id: number }) {
                       <span className={`ans ${o.bad ? 'bad' : 'good'}`}>
                         <i />
                         {o.t}
-                      </span>{' '}
-                      {mm && <span className="pill drift">Drift</span>}
+                      </span>
                     </td>
                     <td style={{ width: 70, textAlign: 'right' }} className="muted">
                       {o.bad ? 'Defect' : 'Good'}
@@ -190,7 +203,7 @@ export default function Drawer({ id }: { id: number }) {
           </table>
         ) : (
           <p className="muted">
-            No answer options in the source{c.g === 'SL0' ? '' : ' — the ACP export has none for SL1, 3 and 4 tasks'}.
+            No answer options in the source{c.g === 'SL1/3/4' ? ' — the ACP export has none for SL1, 3 and 4 tasks' : ''}.
           </p>
         )}
       </details>
@@ -215,10 +228,10 @@ export default function Drawer({ id }: { id: number }) {
                   return (
                     <td key={x}>
                       <button
-                        className={`tick2 ${r ? r.st : 'off'}`}
+                        className={`tick2 ${r ? 'on' : 'off'}`}
                         onClick={() => toggleUse(id, u, x)}
                         aria-pressed={!!r}
-                        title={r ? `In CPF-${u} ${SLNAME(x)} (${r.st}) — click to remove` : 'Not used — click to add'}
+                        title={r ? `In CPF-${u} ${SLNAME(x, levelMap)} — click to remove` : 'Not used — click to add'}
                       />
                     </td>
                   );
@@ -228,7 +241,7 @@ export default function Drawer({ id }: { id: number }) {
           </tbody>
         </table>
         <p className="muted" style={{ fontSize: 13, margin: '8px 0 0' }}>
-          Click a box to tick or untick. Ticking adds the check to that document as pending; unticking removes it.
+          Click a box to tick or untick. Ticking adds the check to that document; unticking removes it.
         </p>
       </div>
 
@@ -253,7 +266,7 @@ export default function Drawer({ id }: { id: number }) {
               CPF-{u}:{' '}
               {c.rows
                 .filter((r) => r.u === u)
-                .map((r) => SLNAME(r.s))
+                .map((r) => SLNAME(r.s, levelMap))
                 .sort()
                 .join(', ')}
             </li>

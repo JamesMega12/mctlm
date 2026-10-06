@@ -27,9 +27,7 @@ user-extensible). Don't recreate it.
 | **Service level** | When a check runs. SL0 splits into four: Outgoing, Rigup, RigDown, Incoming. Then SL1 (250h), SL3 (500h), SL4 (annual). Seven in total. |
 | **Document** | One unit at one service level. 4 seed units x 7 levels = **28 documents**, but this scales with however many units exist. This is the unit of work everywhere — a PDF page, a matrix cell, a row in a check's `rows`. |
 | **Answer** | A possible response to an SL0 check. Either **good** or **defect**. |
-| **Drift** | WorkRight no longer matches the master. |
-| **Pending** | Added or edited here, not yet entered in WorkRight. |
-| **WorkRight** | The SLB system of record that checks are scraped from. |
+| **WorkRight** | The SLB system the checks were originally seeded from. **No longer linked** — see below. |
 | **InTouch / ACP** | The source documents the current Excel was built from. |
 
 Never write "CPF-376" and "CPF-377" as separate units. Never treat SL0 as a
@@ -37,19 +35,14 @@ single level — it is four documents.
 
 ## The rule that drives the design
 
-WorkRight seeded the data. After that **the app is the source of truth**, and
-TLM types changes into WorkRight by hand. So:
+**The app is no longer linked to WorkRight.** The data was seeded once from the
+rev 18 export and the app is now the only source of truth. There is no sync
+status (synced / pending / drift), no review queue, no scrape, no WorkRight
+id on checks, and no write-back. Don't reintroduce them without asking.
 
-- Any add or edit sets the affected rows to `pending`, never `synced`.
-- Nothing is ever written back to WorkRight automatically. Write-back was
-  explicitly deferred — do not build it without asking.
-- The weekly scrape only ever *flags* differences. It must never silently
-  overwrite the master, in either direction.
-- Phase 1 is **add-only**: no delete-check flow. Editing wording and toggling
-  which documents a check appears in is in scope; deleting a check is not.
-  (Sections *can* be removed, cascading to their checks — see
-  `SectionDrawer.tsx`. That's a deliberate exception, not a precedent for
-  deleting individual checks.)
+- Individual checks can be deleted: double-click a check, then "Delete check"
+  (two-click confirm in `Drawer.tsx`, `removeCheck` in the store). Sections can
+  also be removed, cascading to their checks — see `SectionDrawer.tsx`.
 
 ## Stack and conventions
 
@@ -80,10 +73,13 @@ step.
 
 ### Known gaps, not bugs to "fix" silently
 
-- **Add Service Level is a stub.** `AddView.tsx`'s Service level tab only
-  toasts; it doesn't add a real level. Wiring it up is real scope, not a
-  quick fix — service levels are structural (`GROUPS`/`SLNAME` in
-  `lib/constants.ts`), not a data row like units.
+- **Service levels and groups are extensible.** Add Service Level (Add view)
+  appends to `store.levels` — either an existing group or a new one, which
+  becomes its own matrix tab (`Group` is a plain string; `Section.g` links a
+  section to its group). SL0 and SL1/3/4 are only the seed groups; special
+  behaviour keyed on `'SL0'` (default answers, no WO label) is deliberate. Never
+  import the seed `DEFAULT_LEVELS` for rendering; read `useStore(s => s.levels)`
+  and pass it to `SLNAME(s, levels)` / `GOF`.
 - **Not fully offline.** `index.html` loads Barlow / Barlow Condensed from
   Google Fonts. If this ever needs to run on a locked-down laptop with no
   internet, that's a deliberate call to make (self-host the fonts), not an
@@ -129,8 +125,5 @@ It needs `openpyxl` and prints what it dropped — expect ~23 junk options and
 - 13 of 617 Excel rows are missing from the data. They have no value in the
   "In which InTouch documents" column, so there is nothing to attach them to.
   They need a human decision, not a parser change.
-- Sync statuses in the demo are randomly generated from a fixed seed
-  (`makeRng` in `lib/constants.ts`) so the review queue has something in it.
-  Real statuses come from the scrape.
 - No check currently has `swi: 1` in the seed data even though the field and
   UI exist — that's the source data, not a rendering bug.
