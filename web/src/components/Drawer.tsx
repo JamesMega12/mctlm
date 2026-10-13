@@ -147,66 +147,68 @@ export default function Drawer({ id }: { id: number }) {
         </div>
       )}
 
-      <details className="panel" open>
-        <summary>
-          <h3>Answers</h3>
-        </summary>
-        {editing ? (
-          <>
-            <div>
-              {formOpts.map((o, i) => (
-                <div className="oline" key={i}>
-                  <input
-                    type="text"
-                    value={o.t}
-                    aria-label={`Answer ${i + 1}`}
-                    onChange={(e) => updateOption(i, { t: e.target.value })}
-                  />
-                  <div className="seg sm" role="group" aria-label="Answer type">
-                    <button type="button" aria-pressed={!o.bad} onClick={() => updateOption(i, { bad: false })}>
-                      Good
-                    </button>
-                    <button type="button" aria-pressed={!!o.bad} onClick={() => updateOption(i, { bad: true })}>
-                      Defect
+      {c.g === 'SL0' && (
+        <details className="panel" open>
+          <summary>
+            <h3>Answers</h3>
+          </summary>
+          {editing ? (
+            <>
+              <div>
+                {formOpts.map((o, i) => (
+                  <div className="oline" key={i}>
+                    <input
+                      type="text"
+                      value={o.t}
+                      aria-label={`Answer ${i + 1}`}
+                      onChange={(e) => updateOption(i, { t: e.target.value })}
+                    />
+                    <div className="seg sm" role="group" aria-label="Answer type">
+                      <button type="button" aria-pressed={!o.bad} onClick={() => updateOption(i, { bad: false })}>
+                        Good
+                      </button>
+                      <button type="button" aria-pressed={!!o.bad} onClick={() => updateOption(i, { bad: true })}>
+                        Defect
+                      </button>
+                    </div>
+                    <button className="del" type="button" aria-label="Remove answer" onClick={() => removeOption(i)}>
+                      ×
                     </button>
                   </div>
-                  <button className="del" type="button" aria-label="Remove answer" onClick={() => removeOption(i)}>
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-            <button className="btn ghost sm" onClick={addOption}>
-              Add answer
-            </button>
-          </>
-        ) : c.o.length ? (
-          <table className="opt">
-            <tbody>
-              {c.o.map((o, i) => {
-                return (
-                  <tr key={i}>
-                    <td style={{ width: 24 }}>{i + 1}</td>
-                    <td>
-                      <span className={`ans ${o.bad ? 'bad' : 'good'}`}>
-                        <i />
-                        {o.t}
-                      </span>
-                    </td>
-                    <td style={{ width: 70, textAlign: 'right' }} className="muted">
-                      {o.bad ? 'Defect' : 'Good'}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        ) : (
-          <p className="muted">
-            No answer options in the source{c.g === 'SL1/3/4' ? ' — the ACP export has none for SL1, 3 and 4 tasks' : ''}.
-          </p>
-        )}
-      </details>
+                ))}
+              </div>
+              <button className="btn ghost sm" onClick={addOption}>
+                Add answer
+              </button>
+            </>
+          ) : c.o.length ? (
+            <table className="opt">
+              <tbody>
+                {c.o.map((o, i) => {
+                  return (
+                    <tr key={i}>
+                      <td style={{ width: 24 }}>{i + 1}</td>
+                      <td>
+                        <span className={`ans ${o.bad ? 'bad' : 'good'}`}>
+                          <i />
+                          {o.t}
+                        </span>
+                      </td>
+                      <td style={{ width: 70, textAlign: 'right' }} className="muted">
+                        {o.bad ? 'Defect' : 'Good'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          ) : (
+            <p className="muted">
+              No answer options in the source.
+            </p>
+          )}
+        </details>
+      )}
 
       <div className="panel">
         <h3>Where it's used</h3>

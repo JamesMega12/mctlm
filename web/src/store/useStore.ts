@@ -57,6 +57,9 @@ interface StoreState {
   mode: UnitMatchMode;
   onlyCols: boolean;
   openRow: number | null;
+  // Matrix headings the user has collapsed: section ids and WO group labels.
+  collapsedSecs: number[];
+  collapsedWos: string[];
 
   // --- drawer (check and section drawers share one DOM slot — only one of
   // drawerId / sectionDrawerId is ever non-null at a time) ---
@@ -88,6 +91,8 @@ interface StoreState {
   clearMatrixFilters: () => void;
   colFilter: (u: Unit, s?: ServiceLevel) => void;
   toggleOpenRow: (id: number) => void;
+  toggleSectionCollapse: (id: number) => void;
+  toggleWoCollapse: (wo: string) => void;
 
   openDrawer: (id: number, edit?: boolean) => void;
   closeDrawer: () => void;
@@ -157,6 +162,8 @@ export const useStore = create<StoreState>()(
     mode: 'any',
     onlyCols: true,
     openRow: null,
+    collapsedSecs: [],
+    collapsedWos: [],
 
     drawerId: null,
     editing: false,
@@ -219,6 +226,20 @@ export const useStore = create<StoreState>()(
     toggleOpenRow: (id) =>
       set((state) => {
         state.openRow = state.openRow === id ? null : id;
+      }),
+
+    toggleSectionCollapse: (id) =>
+      set((state) => {
+        const i = state.collapsedSecs.indexOf(id);
+        if (i < 0) state.collapsedSecs.push(id);
+        else state.collapsedSecs.splice(i, 1);
+      }),
+
+    toggleWoCollapse: (wo) =>
+      set((state) => {
+        const i = state.collapsedWos.indexOf(wo);
+        if (i < 0) state.collapsedWos.push(wo);
+        else state.collapsedWos.splice(i, 1);
       }),
 
     openDrawer: (id, edit = false) =>

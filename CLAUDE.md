@@ -121,7 +121,8 @@ It needs `openpyxl` and prints what it dropped — expect ~23 junk options and
   were exact inverses, so the model keeps one flag: `bad`. Do not reintroduce
   both columns.
 - SL1, SL3 and SL4 tasks have **no answers**. The ACP export has none for them.
-  The UI says so rather than hiding it. Do not fabricate defaults.
+  The Answers section is hidden for every group except SL0 (matrix row detail,
+  check drawer, add-check dialog). Do not fabricate defaults.
 - 13 of 617 Excel rows are missing from the data. They have no value in the
   "In which InTouch documents" column, so there is nothing to attach them to.
   They need a human decision, not a parser change.
