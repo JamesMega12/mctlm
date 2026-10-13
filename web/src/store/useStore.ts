@@ -1,10 +1,15 @@
 import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import { DEFAULT_LEVELS, DEFAULT_UNITS, ME, SLNAME, TODAY } from '../lib/constants';
 import { getCheck, getSection, suggestDocs } from '../lib/derive';
 import { buildInitialState } from '../lib/init';
+import { applyPlan, type ApplyResult, type ItemDecision } from '../lib/importer/apply.ts';
+import { buildPlan } from '../lib/importer/match.ts';
+import type { ParsedDoc } from '../lib/importer/types.ts';
 import { RAW } from '../data/checklist-data';
 import type {
+  AddTab,
   Check,
   Group,
   LevelMap,
@@ -32,8 +37,8 @@ export type ModalState =
   | { kind: 'addUnit' }
   | null;
 
-interface StoreState {
-  // --- data ---
+/** The master checklist itself — everything that is saved to localStorage. */
+interface DataState {
   checks: Check[];
   sections: Section[];
   units: Unit[];
@@ -44,9 +49,42 @@ interface StoreState {
   // lib/derive.ts's getCheck/getSection.
   nextCheckId: number;
   nextSectionId: number;
+}
+
+/** One imported document, as listed under "Recent imports". */
+export interface ImportLogEntry {
+  at: string;
+  file: string;
+  unit: Unit;
+  level: ServiceLevel;
+  version: string | null;
+  ticked: number;
+  created: number;
+  unticked: number;
+}
+
+/** What "Undo last import" restores: the checklist as it was before. */
+export interface LastImport {
+  at: string;
+  files: number;
+  before: DataState;
+}
+
+/** One document queued for import, with the user's per-item choices. */
+export interface ImportEntry {
+  doc: ParsedDoc;
+  decisions: Record<number, ItemDecision>;
+  untickMissing: boolean;
+}
+
+interface StoreState extends DataState {
+  // --- import history (saved with the data) ---
+  importLog: ImportLogEntry[];
+  lastImport: LastImport | null;
 
   // --- navigation ---
   view: View;
+  addTab: AddTab;
 
   // --- matrix filters ---
   mg: Group;
@@ -81,6 +119,9 @@ interface StoreState {
 
   // --- actions ---
   setView: (v: View) => void;
+  setAddTab: (t: AddTab) => void;
+  /** Jumps to Add new with the Import document tab open. */
+  openImport: () => void;
   setGroup: (g: Group) => void;
   setSearch: (q: string) => void;
   setSectionFilter: (fsec: number | '') => void;
@@ -129,6 +170,14 @@ interface StoreState {
   closeModal: () => void;
   commitNew: (secId: number, n: string, boxes: { u: Unit; s: ServiceLevel }[], o: Option[], swi: boolean) => void;
 
+  /** Imports parsed InTouch documents in order. Each is re-planned against the
+   * checklist as the earlier ones left it, so two documents that add the same
+   * new check don't add it twice. */
+  applyImport: (entries: ImportEntry[]) => ApplyResult;
+  undoImport: () => void;
+  /** Throws away every saved change and goes back to the seed data. */
+  resetData: () => void;
+
   openExportDialog: () => void;
   toggleExportUnit: (u: Unit) => void;
   toggleExportLevel: (s: ServiceLevel) => void;
@@ -138,12 +187,10 @@ interface StoreState {
   pushToast: (text: string) => void;
 }
 
-const initial = buildInitialState(RAW);
-
-let toastTimer: ReturnType<typeof setTimeout> | null = null;
-
-export const useStore = create<StoreState>()(
-  immer((set, get) => ({
+/** The seed data, rebuilt fresh each call so it never shares objects with live state. */
+function seedData(): DataState {
+  const initial = buildInitialState(RAW);
+  return {
     checks: initial.checks,
     sections: initial.sections,
     units: [...DEFAULT_UNITS],
@@ -151,8 +198,56 @@ export const useStore = create<StoreState>()(
     levels: { SL0: [...DEFAULT_LEVELS.SL0], 'SL1/3/4': [...DEFAULT_LEVELS['SL1/3/4']] },
     nextCheckId: initial.checks.length,
     nextSectionId: initial.sections.length,
+  };
+}
+
+const dataOf = (s: DataState): DataState => ({
+  checks: s.checks,
+  sections: s.sections,
+  units: s.units,
+  addedUnits: s.addedUnits,
+  levels: s.levels,
+  nextCheckId: s.nextCheckId,
+  nextSectionId: s.nextSectionId,
+});
+
+/** localStorage that never throws: a full or blocked store just means nothing
+ * is saved, and the app keeps working from memory. */
+const safeStorage = createJSONStorage(() => ({
+  getItem: (k: string) => {
+    try {
+      return localStorage.getItem(k);
+    } catch {
+      return null;
+    }
+  },
+  setItem: (k: string, v: string) => {
+    try {
+      localStorage.setItem(k, v);
+    } catch (err) {
+      console.warn('Could not save the checklist to localStorage:', err);
+    }
+  },
+  removeItem: (k: string) => {
+    try {
+      localStorage.removeItem(k);
+    } catch {
+      /* nothing to remove */
+    }
+  },
+}));
+
+let toastTimer: ReturnType<typeof setTimeout> | null = null;
+
+export const useStore = create<StoreState>()(
+  persist(
+    immer((set, get) => ({
+    ...seedData(),
+    importLog: [],
+    lastImport: null,
 
     view: 'dash',
+    addTab: 'check',
 
     mg: 'SL0',
     q: '',
@@ -179,6 +274,12 @@ export const useStore = create<StoreState>()(
     toastText: null,
 
     setView: (v) => set((state) => void (state.view = v)),
+    setAddTab: (t) => set((state) => void (state.addTab = t)),
+    openImport: () =>
+      set((state) => {
+        state.addTab = 'import document';
+        state.view = 'add';
+      }),
 
     setGroup: (g) =>
       set((state) => {
@@ -431,6 +532,67 @@ export const useStore = create<StoreState>()(
       get().pushToast(`Added to ${boxes.length} document${boxes.length > 1 ? 's' : ''}.`);
     },
 
+    applyImport: (entries) => {
+      const total: ApplyResult = { ticked: 0, created: 0, unticked: 0, sectionsCreated: 0, linked: 0, skipped: 0 };
+      const at = new Date().toISOString().slice(0, 10);
+      set((state) => {
+        // A plain copy of the data as it was, for "Undo last import".
+        const before = JSON.parse(JSON.stringify(dataOf(state))) as DataState;
+        for (const entry of entries) {
+          const plan = buildPlan(entry.doc, state);
+          if (plan.blockers.length) continue;
+          const r = applyPlan(state, plan, { decisions: entry.decisions, untickMissing: entry.untickMissing, when: at, who: ME });
+          (Object.keys(total) as (keyof ApplyResult)[]).forEach((k) => (total[k] += r[k]));
+          state.importLog.unshift({
+            at,
+            file: entry.doc.fileName,
+            unit: plan.unit,
+            level: plan.level,
+            version: entry.doc.version,
+            ticked: r.ticked,
+            created: r.created,
+            unticked: r.unticked,
+          });
+        }
+        state.importLog.length = Math.min(state.importLog.length, 60);
+        state.lastImport = { at, files: entries.length, before };
+      });
+      get().pushToast(
+        `Imported ${entries.length} document${entries.length !== 1 ? 's' : ''}: ${total.created} added, ${total.ticked} ticked, ${total.unticked} unticked.`,
+      );
+      return total;
+    },
+
+    undoImport: () => {
+      const last = get().lastImport;
+      if (!last) return;
+      set((state) => {
+        Object.assign(state, last.before);
+        // The log keeps only what is still in the data.
+        state.importLog.splice(0, last.files);
+        state.lastImport = null;
+        state.drawerId = null;
+        state.sectionDrawerId = null;
+        state.openRow = null;
+      });
+      get().pushToast('Last import undone.');
+    },
+
+    resetData: () => {
+      set((state) => {
+        Object.assign(state, seedData());
+        state.importLog = [];
+        state.lastImport = null;
+        state.drawerId = null;
+        state.sectionDrawerId = null;
+        state.openRow = null;
+        state.fsec = '';
+        state.fu = [];
+        state.fs = [];
+      });
+      get().pushToast('Checklist reset to the seed data.');
+    },
+
     openExportDialog: () =>
       set((state) => {
         if (!state.expU) state.expU = state.fu.length ? [...state.fu] : [...state.units];
@@ -465,4 +627,13 @@ export const useStore = create<StoreState>()(
       }, 2800);
     },
   })),
+    {
+      // The checklist is saved in this browser. Only the data and the import
+      // history persist; UI state (filters, open drawers) starts fresh.
+      name: 'mctlm-master-checklist',
+      version: 1,
+      storage: safeStorage,
+      partialize: (s) => ({ ...dataOf(s), importLog: s.importLog, lastImport: s.lastImport }),
+    },
+  ),
 );

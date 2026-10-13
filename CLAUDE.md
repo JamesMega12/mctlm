@@ -8,9 +8,13 @@ A working demo of a master checklist database for TLM (Technology Lifecycle
 Management). It replaces an Excel sheet that tracks which maintenance checks
 belong to which CPF unit at which service level.
 
-It is a **demo, not the product**. All state is in memory and resets on
-refresh. There is no backend, no database, no scraper yet. See HANDOVER.md for
-where the real build starts.
+It is a **demo, not the product**. There is no backend, no database, no scraper
+yet. The checklist is saved to the browser's `localStorage` (key
+`mctlm-master-checklist`) so it survives a refresh; it is per browser, not
+shared. See HANDOVER.md for where the real build starts.
+
+Documents can be imported: **Add new → Import document** reads InTouch ACP PDFs
+in the browser and updates the matrix. See "Importing InTouch documents" below.
 
 The app lives entirely in `web/`. An earlier vanilla-JS build (`app/`) was
 kept around as a reference while `web/` reached feature parity; it has since
@@ -84,8 +88,9 @@ step.
   Google Fonts. If this ever needs to run on a locked-down laptop with no
   internet, that's a deliberate call to make (self-host the fonts), not an
   oversight to patch reflexively.
-- **No test suite.** There is no Playwright/Vitest setup in `web/`. If you
-  add one, put it under `web/` and wire it into `package.json` scripts.
+- **Tests cover the importer only.** `npm test` runs Vitest over
+  `lib/importer/importer.test.ts` (synthetic pages, not real PDFs). There are no
+  UI tests; the matrix, drawers and add flows are still checked by hand.
 
 ## Running and testing
 
@@ -95,13 +100,70 @@ npm install
 npm run dev       # http://localhost:5173
 npm run build     # tsc -b && vite build
 npm run lint       # oxlint
+npm test           # vitest: importer parse / match / apply
+npm run check:pdfs -- "<folder of InTouch PDFs>"   # parse real PDFs, flag problems
 ```
 
 Needs Node 20+ (Vite 8 requires it; check with `node --version` before
-debugging a mysterious `styleText` / ESM error on older Node).
+debugging a mysterious `styleText` / ESM error on older Node). `check:pdfs`
+imports the TypeScript sources directly, so it needs Node 24.
 
-There is no automated test suite yet. Manually exercise the matrix, drawer,
-add flows, and PDF export after any change that touches them, at minimum.
+Outside the importer there is no automated test suite. Manually exercise the
+matrix, drawer, add flows, and PDF export after any change that touches them, at
+minimum.
+
+## Importing InTouch documents
+
+**Add new → Import document.** One PDF is one unit at one service level (so a
+unit's SL0 is four PDFs). Code lives in `web/src/lib/importer/`:
+
+| File | Job |
+|---|---|
+| `extract.ts` | pdf.js text runs with x/y per page. No layout decisions. |
+| `parse.ts` | Pages to `ParsedDoc`: unit, level, version, items, warnings. |
+| `match.ts` | `buildPlan`: compare with the master, nothing is mutated. |
+| `apply.ts` | `applyPlan`: carry the plan out on a store draft. |
+| `tally.ts` | Counts shown in the review. |
+| `read.ts` | Browser only: loads pdf.js lazily, reads a `File`. |
+
+Parser rules (verified against all 28 source PDFs: 1,147 SL0 checks, 1,777
+SL1/3/4 checks, no warnings):
+
+- **SL1/3/4**: one U+F099 glyph in the right margin (x > 450) on the first line
+  of every check is the only reliable item delimiter. The glyph sits ~2.4pt below
+  its line's baseline, so it is matched to the *nearest* line. Bands are
+  `WO #N:` (SL1) or `Task Line #N:` (SL3/SL4); sections are `N Name` with N
+  counting up by one. Continuation lines and `Note:` lines join the item.
+- **SL0**: two columns. Find the gutter from run x-extents (not by slicing text),
+  read each page's left column then its right. U+F099 = the pass answer
+  (`bad: false`), U+F0A3 = every other answer. A line deeper than the option's
+  text is that option wrapping; a line at the title's indent after options starts
+  a new check; a *new column* also starts a new check. Floating callouts
+  ("WORKING AT HEIGHT!") are indented past the title and are dropped.
+- Trim each page to the checks area (below "Checks", above "Equipment status and
+  signatures" / the deficiency table) **before** looking for the gutter: the
+  intro and sign-off text span both columns and hide it.
+- Footers vary: `V4.1, 14-Aug-26` and `Rev 3.1, 2-Sep-26` both occur.
+- Hyphenated wraps (`up-to-` / `date.`) join without a space.
+
+Matching rules (follow the hand-built sheet; see the handoff note's look-alike
+section for why):
+
+- A document item is the same check only when the wording is **identical**
+  (case, spacing, dash and quote glyphs ignored) or was linked before
+  (`Check.alias`). **Never merge on similarity.** Close wordings (Dice >= 85%)
+  are only *suggested*; the user chooses "Same check", which stores the new
+  wording as an alias so it matches by itself next time.
+- Match within the section and WO first; same wording under another section is
+  accepted only if exactly one check has it.
+- Suggestions only point at checks that existed before the batch
+  (`suggestBelowId`). Checks a file earlier in the batch will create get ids that
+  shift if the user changes an earlier choice.
+- The review simulates the batch in order on a scratch copy, so its counts equal
+  what Import does. `applyImport` re-plans each file against the live data.
+- Unticking checks that are no longer in a document is opt-in, per document.
+- Never commit the source PDFs: they are marked SLB-Private. Tests use synthetic
+  pages; real-PDF checks go through `npm run check:pdfs`.
 
 ## Regenerating data
 

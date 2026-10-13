@@ -9,7 +9,7 @@ State of the CPF master checklist project as of 23 September 2026.
 
 A clickable demo of the app, running on the real rev 18 data, built in React
 + TypeScript + Vite (`web/`). It is a prototype for stakeholder review, not a
-foundation to build the product on: no backend, no persistence, no scraper.
+foundation to build the product on: no backend, no shared database, no scraper.
 What it does prove is the data model and the interactions TLM asked for.
 
 An earlier vanilla-JS build (`app/`) was kept alongside `web/` while the
@@ -33,10 +33,16 @@ Done:
   filter panel; it starts with no checks assigned.
 - Tickable document grid in the check drawer, add and remove.
 - PDF export of any mix of units and levels, one document per page.
-- Review queue for drift and pending items.
+- **Import InTouch documents** (Add new → Import document): drop one PDF or a
+  whole batch; the app reads them in the browser, shows what each would add,
+  tick and leave alone, and applies them on confirm. Verified on all 28 source
+  PDFs. Includes "Undo last import" and a per-import log.
+- **Persistence**: the checklist is saved to the browser's localStorage, so it
+  survives a refresh. Per browser only, not shared.
+- Unit tests for the importer (`npm test`) and a command-line checker for new
+  batches of PDFs (`npm run check:pdfs -- <folder>`).
 
-Not started: the scraper, any database, authentication, persistence, real
-tests (no Playwright/Vitest setup exists yet).
+Not started: the scraper, any shared database, authentication, UI tests.
 
 **Add Service Level** now works: it adds a level to the SL0 or SL1/3/4 group
 and creates a new matrix column for every unit (no checks ticked). A new group (its own matrix tab) can be created from the same form.
