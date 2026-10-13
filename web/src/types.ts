@@ -30,6 +30,9 @@ export type UnitMatchMode = 'any' | 'all' | 'only' | 'missing';
 
 export type View = 'dash' | 'matrix' | 'add';
 
+/** Tabs on the Add new page. */
+export type AddTab = 'check' | 'unit' | 'service level' | 'import document';
+
 /** Raw shape as produced by tools/extract.py and embedded in the old demo. */
 export interface RawCheck {
   s: number; // section id
@@ -80,6 +83,9 @@ export interface Check {
   g: Group;
   rows: DocRow[];
   history: HistoryEntry[];
+  /** Other wordings of this check seen in InTouch documents and linked to it
+   * during an import, so the next import matches them automatically. */
+  alias?: string[];
 }
 
 export interface Section {

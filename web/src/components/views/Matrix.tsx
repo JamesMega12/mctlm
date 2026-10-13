@@ -35,6 +35,7 @@ export default function Matrix() {
   const colFilter = useStore((s) => s.colFilter);
   const openExportDialog = useStore((s) => s.openExportDialog);
   const openAddSectionDialog = useStore((s) => s.openAddSectionDialog);
+  const openImport = useStore((s) => s.openImport);
   const openAddUnitDialog = useStore((s) => s.openAddUnitDialog);
 
   const filters: MatrixFilters = { mg, q, fsec, fu, fs, mode, onlyCols, units, levelMap, addedUnits };
@@ -265,9 +266,16 @@ export default function Matrix() {
         </table>
       </div>
 
-      <p style={{ marginTop: 12 }}>
+      <p className="frow" style={{ marginTop: 12 }}>
         <button className="btn ghost" onClick={() => openAddSectionDialog(mg)}>
           + Add section
+        </button>
+        <button
+          className="btn ghost"
+          onClick={openImport}
+          title="Import InTouch PDF documents to add or update checks in bulk"
+        >
+          Import document
         </button>
       </p>
     </>

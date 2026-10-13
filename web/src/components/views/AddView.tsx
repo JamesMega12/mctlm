@@ -2,11 +2,10 @@ import { useState } from 'react';
 import { useStore } from '../../store/useStore';
 import { groupLabel, SUGGEST_THRESHOLD } from '../../lib/constants';
 import { getSection, suggestDocs } from '../../lib/derive';
-import type { Group } from '../../types';
+import type { AddTab, Group } from '../../types';
+import ImportPanel from './ImportPanel';
 
-type AddType = 'check' | 'unit' | 'service level';
-
-const ADD_TYPES: AddType[] = ['check', 'unit', 'service level'];
+const ADD_TYPES: AddTab[] = ['check', 'unit', 'service level', 'import document'];
 
 /** Add-new landing page. The "check" tab hands off to the same add-check
  * dialog the matrix's section "+" buttons open. "Unit" adds a real unit
@@ -23,7 +22,10 @@ export default function AddView() {
   const openAddCheckDialog = useStore((s) => s.openAddCheckDialog);
   const addUnit = useStore((s) => s.addUnit);
 
-  const [addType, setAddType] = useState<AddType>('check');
+  // Lives in the store so other pages (the matrix's Import document button)
+  // can open this page on a given tab.
+  const addType = useStore((s) => s.addTab);
+  const setAddType = useStore((s) => s.setAddTab);
 
   const [pkGroup, setPkGroup] = useState<Group>('SL0');
   const [pkSection, setPkSection] = useState<number | null>(null);
@@ -83,7 +85,10 @@ export default function AddView() {
   return (
     <>
       <h2>Add new</h2>
-      <p className="sub">New items are added straight to the master checklist.</p>
+      <p className="sub">
+        New items are added straight to the master checklist. To bring in a whole InTouch document instead of typing its
+        checks, use Import document.
+      </p>
 
       <div className="toolbar">
         <div className="seg" role="group" aria-label="What to add">
@@ -95,8 +100,10 @@ export default function AddView() {
         </div>
       </div>
 
-      <div className="panel">
-        {addType === 'check' ? (
+      <div className={addType === 'import document' ? undefined : 'panel'}>
+        {addType === 'import document' ? (
+          <ImportPanel />
+        ) : addType === 'check' ? (
           <div className="form">
             <label className="fld">
               <span>Which section?</span>

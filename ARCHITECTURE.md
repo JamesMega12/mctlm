@@ -83,9 +83,11 @@ schema keeps `workright_id` nullable and needs a linking step later.
 
 ## 2. The demo in this repo
 
-Front end only. React 19 + TypeScript, built with Vite. No backend, no
-network calls, no persistence — everything lives in one Zustand store and
-resets on refresh.
+Front end only. React 19 + TypeScript, built with Vite. No backend and no
+network calls — everything lives in one Zustand store. The checklist data
+(not UI state) is persisted to `localStorage` through zustand's `persist`
+middleware (`mctlm-master-checklist`, with the import log and an undo snapshot);
+"Reset to the seed data" on the Import screen clears it.
 
 ```
 web/
@@ -169,7 +171,9 @@ single switchboard over five dialog kinds.
 | `lib/init.ts` | Expands raw JSON into working state; seeds simulated drift/pending sync statuses from a fixed RNG seed so the review queue has content |
 | `lib/text.ts` | `sim()` — Jaccard overlap on 3+ letter words. Powers look-alike detection at 0.5 in the add-check form, 0.55 in the drawer |
 | `lib/pdf.ts` | Builds one page per selected unit x service-level document, jsPDF + autotable, landscape A4 |
-| `store/useStore.ts` | Every state mutation: `saveEdit`, `toggleUse`, `commitNew`, `removeSection`, `resolve`, etc. |
+| `lib/importer/*` | InTouch PDF import: `extract` (pdf.js runs) → `parse` (layout rules) → `match` (plan against the master) → `apply` (mutate a draft). Rules and gotchas are in CLAUDE.md "Importing InTouch documents" |
+| `components/views/ImportPanel.tsx`, `components/ImportDocCard.tsx` | The Add new → Import document screen: drop zone, per-document review, import log, undo, reset |
+| `store/useStore.ts` | Every state mutation: `saveEdit`, `toggleUse`, `commitNew`, `removeSection`, `applyImport`, `undoImport`, `resetData`, etc. Wrapped in `persist` (data only) |
 
 ### Export
 
