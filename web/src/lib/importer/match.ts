@@ -45,6 +45,8 @@ export interface ImportPlan {
   blockers: string[];
   createsUnit: boolean;
   createsLevel: boolean;
+  /** The level's group doesn't exist either, so importing also adds a matrix tab. */
+  createsGroup: boolean;
   items: PlanItem[];
   /** Checks ticked for this unit and level today that the document no longer lists. */
   missingIds: number[];
@@ -97,8 +99,16 @@ export function resolveLevel(levels: LevelMap, level: ServiceLevel): ServiceLeve
   return null;
 }
 
-const sectionMatches = (sec: Section, item: ParsedItem, g: Group) =>
-  sec.g === g && normName(sec.name) === normName(item.sectionName) && (!item.band || bandName(sec.wo) === bandName(item.band));
+/** The WO band an item sits under. A document with no bands of its own (the
+ * 2-year SLX one) outside SL0 gets one named after its level, so its sections
+ * show under their own heading in the matrix instead of being folded into
+ * whichever WO happens to have a section of the same name. */
+export function bandFor(item: ParsedItem, group: Group, level: string): string | null {
+  return item.band ?? (group === 'SL0' ? null : level);
+}
+
+const sectionMatches = (sec: Section, item: ParsedItem, g: Group, band: string | null) =>
+  sec.g === g && normName(sec.name) === normName(item.sectionName) && (!band || bandName(sec.wo) === bandName(band));
 
 /** The master's own WO label for a document band, e.g. "WO #1: Common Pre" for
  * "Task Line #1: Common-Pre". Falls back to the band as printed. */
@@ -141,7 +151,7 @@ export function buildPlan(doc: ParsedDoc, data: MasterData, opts: PlanOptions = 
 
   const claimed = new Set<number>();
   const items: PlanItem[] = doc.items.map((parsed) => {
-    const section = data.sections.find((s) => sectionMatches(s, parsed, group)) ?? null;
+    const section = data.sections.find((s) => sectionMatches(s, parsed, group, bandFor(parsed, group, level))) ?? null;
     const text = normText(parsed.text);
     const candidates = (byText.get(text) ?? []).filter((c) => !claimed.has(c.id));
 
@@ -194,6 +204,7 @@ export function buildPlan(doc: ParsedDoc, data: MasterData, opts: PlanOptions = 
     blockers,
     createsUnit: !!unit && !data.units.includes(unit),
     createsLevel: !!level && !resolved,
+    createsGroup: !!level && !resolved && !(group in data.levels),
     items,
     missingIds,
   };

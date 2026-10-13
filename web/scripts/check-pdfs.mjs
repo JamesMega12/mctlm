@@ -27,7 +27,7 @@ let flagged = 0;
 const totals = {};
 for (const file of walk(root).sort()) {
   const doc = await pdfjs.getDocument({ data: new Uint8Array(fs.readFileSync(file)), useSystemFonts: true, verbosity: 0 }).promise;
-  const parsed = parseDocument(await extractPages(doc), path.basename(file));
+  const parsed = parseDocument(await extractPages(doc, pdfjs.OPS), path.basename(file));
   const key = parsed.group ?? '?';
   totals[key] = (totals[key] ?? 0) + parsed.items.length;
   const unit = parsed.unit ? `CPF-${parsed.unit}` : '?';

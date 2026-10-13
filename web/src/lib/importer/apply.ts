@@ -1,9 +1,19 @@
 import type { Check, Group, LevelMap, Section, Unit } from '../../types';
-import { normText, resolveBand, type ImportPlan } from './match.ts';
+import { bandFor, normText, resolveBand, type ImportPlan } from './match.ts';
 
 /** What the user chose for one document item, overriding the plan's default
- * (match if matched, create if not). */
-export type ItemDecision = 'new' | 'skip' | { link: number };
+ * (match if matched, create if not).
+ *  - `link`: it is that existing check; keep the check's wording and remember
+ *    the document's wording as an alias.
+ *  - `replace`: it is that existing check; the check takes the document's
+ *    wording (and, on SL0, its answers). The old wording is kept as an alias. */
+export type ItemDecision = 'new' | 'skip' | { link: number } | { replace: number };
+
+/** The existing check a decision points at, if it points at one. */
+export function decisionTarget(d: ItemDecision | undefined): number | null {
+  if (!d || typeof d !== 'object') return null;
+  return 'link' in d ? d.link : d.replace;
+}
 
 export interface ApplyOptions {
   /** Per item index, from ImportPlan.items. */
@@ -21,6 +31,7 @@ export interface ApplyResult {
   unticked: number;
   sectionsCreated: number;
   linked: number;
+  replaced: number;
   skipped: number;
 }
 
@@ -40,7 +51,7 @@ export function applyPlan(data: MasterDraft, plan: ImportPlan, opts: ApplyOption
   const { unit, level, group } = plan;
   const file = plan.doc.fileName;
   const source = plan.doc.version ? `${file} (${plan.doc.version})` : file;
-  const result: ApplyResult = { ticked: 0, created: 0, unticked: 0, sectionsCreated: 0, linked: 0, skipped: 0 };
+  const result: ApplyResult = { ticked: 0, created: 0, unticked: 0, sectionsCreated: 0, linked: 0, replaced: 0, skipped: 0 };
 
   if (!data.units.includes(unit)) {
     data.units.push(unit);
@@ -57,7 +68,8 @@ export function applyPlan(data: MasterDraft, plan: ImportPlan, opts: ApplyOption
     const item = plan.items[idx];
     if (item.sectionId !== null) return item.sectionId;
     const p = item.parsed;
-    const wo = p.band ? resolveBand(data.sections, group, p.band) : 'SL0';
+    const band = bandFor(p, group, level);
+    const wo = band ? resolveBand(data.sections, group, band) : 'SL0';
     const key = `${wo}\u0000${normText(p.sectionName)}`;
     const known = newSections.get(key);
     if (known !== undefined) return known;
@@ -83,7 +95,18 @@ export function applyPlan(data: MasterDraft, plan: ImportPlan, opts: ApplyOption
     }
 
     let target: Check | undefined;
-    if (decision && typeof decision === 'object') {
+    if (decision && typeof decision === 'object' && 'replace' in decision) {
+      target = byId.get(decision.replace);
+      if (target && normText(target.n) !== normText(item.parsed.text)) {
+        const old = target.n;
+        // Documents that still say the old wording keep matching this check.
+        target.alias = [...(target.alias ?? []).filter((a) => normText(a) !== normText(item.parsed.text)), old];
+        target.n = item.parsed.text;
+        if (group === 'SL0' && item.parsed.options.length) target.o = item.parsed.options.map((o) => ({ ...o }));
+        target.history.push({ t: opts.when, who: opts.who, what: `Replaced by the wording in ${source}. Was: "${old}"` });
+        result.replaced++;
+      }
+    } else if (decision && typeof decision === 'object') {
       target = byId.get(decision.link);
       if (target && normText(target.n) !== normText(item.parsed.text)) {
         target.alias = [...(target.alias ?? []), item.parsed.text];

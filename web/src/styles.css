@@ -178,3 +178,9 @@ table.use td .tick2{border-style:solid}
 .imp-foot{display:flex;justify-content:flex-end;align-items:center;gap:14px;flex-wrap:wrap}
 .imp-pick{justify-content:center;margin:10px 0 4px}
 .imp-pick label{cursor:pointer}
+/* Import review card: setup rows and notes */
+.imp-notes{display:grid;gap:8px;margin:0 0 10px}
+.imp-notes p,.imp-notes .warn{margin:0}
+.imp-notes .warn{padding:8px 12px}
+.imp-notes .warn ul{margin:6px 0 0;padding-left:20px}
+.imp-group .imp-sec{margin:10px 0 2px;font-weight:600;color:var(--ink)}

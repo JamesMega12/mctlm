@@ -348,11 +348,258 @@ describe('applyPlan', () => {
     expect(data.levels['SL1/3/4']).toContain('SL4');
   });
 
+  it('replaces a check with the document\'s wording, keeping the old wording as an alias and logging it', () => {
+    const data = master();
+    const doc = parsed([['Task Line #1: Common-Pre', 'General', 'Drain the tank.']]);
+    const r = applyPlan(data, buildPlan(doc, data), { decisions: { 0: { replace: 2 } }, untickMissing: false, when: 'd', who: 'w' });
+    const c = data.checks.find((x) => x.id === 2)!;
+    expect(r).toMatchObject({ replaced: 1, created: 0, ticked: 1 });
+    expect(c.n).toBe('Drain the tank.');
+    expect(c.alias).toEqual(['Drain the tank']);
+    expect(c.rows).toEqual([{ u: '573', s: 'SL3' }]);
+    expect(c.history.some((h) => h.what.includes('Replaced') && h.what.includes('Drain the tank'))).toBe(true);
+    // Documents that still say the old wording, and ones that say the new, both match it.
+    expect(buildPlan(parsed([['Task Line #1: Common-Pre', 'General', 'Drain the tank']]), data).items[0]).toMatchObject({ checkId: 2, via: 'alias' });
+    expect(buildPlan(doc, data).items[0]).toMatchObject({ checkId: 2, via: 'exact' });
+  });
+
+  it('replaces the answers too on SL0, and leaves them alone elsewhere', () => {
+    const data = master();
+    data.levels.SL0 = ['Outgoing'];
+    data.sections.push({ id: 2, name: 'General', wo: 'SL0', g: 'SL0' });
+    data.checks.push({ ...chk(10, 2, 'Check the unit', 'SL0', [['573', 'Outgoing']]), o: [{ t: 'Old answer', bad: false }] });
+    const answers = [
+      { t: 'New good', bad: false },
+      { t: 'New bad', bad: true },
+    ];
+    const doc = {
+      ...parsed([]),
+      level: 'Outgoing',
+      group: 'SL0',
+      items: [{ sectionNo: 1, sectionName: 'General', band: null, text: 'Check the unit.', options: answers, page: 1 }],
+    };
+    applyPlan(data, buildPlan(doc, data), { decisions: { 0: { replace: 10 } }, untickMissing: false, when: 'd', who: 'w' });
+    expect(data.checks.find((x) => x.id === 10)).toMatchObject({ n: 'Check the unit.', o: answers });
+
+    const banded = master();
+    banded.checks[2].o = [{ t: 'Kept', bad: false }];
+    applyPlan(banded, buildPlan(parsed([['Task Line #1: Common-Pre', 'General', 'Drain the tank.']]), banded), {
+      decisions: { 0: { replace: 2 } },
+      untickMissing: false,
+      when: 'd',
+      who: 'w',
+    });
+    expect(banded.checks[2].o).toEqual([{ t: 'Kept', bad: false }]);
+  });
+
   it('skips items the user skipped', () => {
     const data = master();
     const doc = parsed([['Task Line #2: Mechanical', 'Engine', 'Brand new check.']]);
     const plan = buildPlan(doc, data);
     const r = applyPlan(data, plan, { decisions: { 0: 'skip' }, untickMissing: false, when: 'd', who: 'w' });
     expect(r).toMatchObject({ created: 0, skipped: 1 });
+  });
+});
+
+describe('service level and unit titles', () => {
+  const levelOf = (title: string, levelLine: string) => {
+    const doc = parseDocument([page(...header(title, levelLine), t(31, 600, 'Checks'))], 'x.pdf');
+    return { unit: doc.unit, level: doc.level, group: doc.group };
+  };
+
+  it('reads a numbered level in full, so SL10 is not mistaken for SL1', () => {
+    expect(levelOf('CPF-573 Cement Pump Float', 'Service Level 10 (5000 hours)')).toMatchObject({ level: 'SL10', group: 'SL1/3/4' });
+    expect(levelOf('CPF-573 Cement Pump Float', 'Service Level 2 (250 hours)')).toMatchObject({ level: 'SL2', group: 'SL1/3/4' });
+  });
+
+  it('reads a lettered level such as SLX, which is a service level (and group) of its own', () => {
+    expect(levelOf('CPF-573 Cement Pump Float', 'Service Level X (2 year)')).toMatchObject({ level: 'SLX', group: 'SLX' });
+    expect(levelOf('CPF-573 Cement Pump Float', 'SLX Service')).toMatchObject({ level: 'SLX' });
+  });
+
+  it('names an unfamiliar SL0 check type from its title', () => {
+    expect(levelOf('CPF-573 Cement Pump Float', 'Pre-Job Check, Service Level 0')).toMatchObject({ level: 'PreJob', group: 'SL0' });
+    expect(levelOf('CPF-573 Cement Pump Float', 'Rig Up & Spot Check, Service Level 0')).toMatchObject({ level: 'Rigup' });
+  });
+
+  it('reads a "CPF-XXX" title as a unit called XXX', () => {
+    expect(levelOf('CPF-XXX', 'Service Level X (2 year)')).toMatchObject({ unit: 'XXX', level: 'SLX', group: 'SLX' });
+    expect(levelOf('CPF-637 Cement Pump Float', 'Service Level 3')).toMatchObject({ unit: '637' });
+  });
+});
+
+describe('parseDocument: no item markers (the 2-year SLX layout)', () => {
+  const pitch = 10.3;
+  // Lines inside a check sit one pitch apart; a note sits ~1.3 pitches; a new check ~1.9.
+  const doc = parseDocument(
+    [
+      page(
+        ...header('CPF-XXX', 'Service Level X (2 year)'),
+        t(31, 600, 'Checks'),
+        t(32, 580, 'Systems and Components'),
+        t(44, 560, '1'),
+        sp(50, 560),
+        t(61, 560, 'General'),
+        t(61, 540, 'Clear the loose debris from all the lines and'),
+        t(61, 540 - pitch, 'fittings.'),
+        t(61, 540 - pitch - 19, 'Do a close check of each part.'),
+        t(61, 540 - pitch - 19 - 13.3, 'Note: See the register.'),
+        t(61, 540 - pitch - 19 - 13.3 - pitch, 'InTouch 1234567 .'),
+        t(61, 450, 'Replace the filter.'),
+        t(44, 420, '2'),
+        sp(50, 420),
+        t(61, 420, 'Engine'),
+        t(61, 400, 'Service the first unit.'),
+        t(61, 380, 'Service the second unit.'),
+        t(32, 300, 'Equipment status and signatures'),
+      ),
+    ],
+    'slx.pdf',
+  );
+
+  it('starts a check after a larger gap, and folds notes and wrapped lines into the check above', () => {
+    expect(doc.items.map((i) => i.text)).toEqual([
+      'Clear the loose debris from all the lines and fittings.',
+      'Do a close check of each part. Note: See the register. InTouch 1234567 .',
+      'Replace the filter.',
+      'Service the first unit.',
+      'Service the second unit.',
+    ]);
+    expect(doc.items.map((i) => [i.sectionNo, i.sectionName, i.band])).toEqual([
+      [1, 'General', null],
+      [1, 'General', null],
+      [1, 'General', null],
+      [2, 'Engine', null],
+      [2, 'Engine', null],
+    ]);
+  });
+
+  it('makes the level its own group and reads the unit as XXX', () => {
+    expect(doc).toMatchObject({ level: 'SLX', group: 'SLX', unit: 'XXX' });
+    expect(doc.warnings.some((w) => w.includes('OK circle') && w.includes('new check'))).toBe(true);
+  });
+});
+
+describe('parseDocument: rows drawn as table lines', () => {
+  // The same page as the spacing test, but with the table's row lines. Row 1
+  // holds two paragraphs a big gap apart: spacing alone would split it in two,
+  // the row lines say it is one check.
+  const doc = (rules: number[]) =>
+    parseDocument(
+      [
+        {
+          ...page(
+            ...header('CPF-XXX', 'Service Level X (2 year)'),
+            t(31, 600, 'Checks'),
+            t(32, 590, 'Systems and Components'),
+            t(44, 570, '1'),
+            sp(50, 570),
+            t(61, 570, 'General'),
+            t(61, 550, 'Do a close check of each cable.'),
+            t(61, 520, 'Read the document and examine the cables.'),
+            t(61, 500, 'Replace the filter.'),
+            t(61, 460, 'Service the second unit.'),
+            t(32, 300, 'Equipment status and signatures'),
+          ),
+          rules,
+        },
+      ],
+      'slx.pdf',
+    );
+
+  it('starts a check only where a row line falls between two text lines', () => {
+    // Row lines under the section bar, between row 1 and 2 (y=510), and between 2 and 3 (y=475).
+    const d = doc([560, 510, 475]);
+    expect(d.items.map((i) => i.text)).toEqual([
+      'Do a close check of each cable. Read the document and examine the cables.',
+      'Replace the filter.',
+      'Service the second unit.',
+    ]);
+  });
+
+  it('says it used the row lines, and falls back to spacing (with the old warning) when the page has none', () => {
+    expect(doc([560, 510, 475]).warnings.join(' ')).toContain("lines drawn between the table's rows");
+    const spaced = doc([]);
+    expect(spaced.items.length).toBeGreaterThan(3);
+    expect(spaced.warnings.join(' ')).toContain('gap between lines');
+  });
+});
+
+describe('a new service level of its own (SLX)', () => {
+  const own = {
+    ...parsed([]),
+    unit: '573',
+    level: 'SLX',
+    group: 'SLX',
+    items: [{ sectionNo: 1, sectionName: 'Engine', band: null, text: 'Service the second unit.', options: [], page: 1 }],
+  };
+
+  it('creates the level and its own group (a matrix tab), with its sections under a heading of the same name', () => {
+    const data = master();
+    const plan = buildPlan(own, data);
+    expect(plan).toMatchObject({ createsLevel: true, createsGroup: true, group: 'SLX' });
+
+    applyPlan(data, plan, { decisions: {}, untickMissing: false, when: 'd', who: 'w' });
+    expect(data.levels).toMatchObject({ SLX: ['SLX'], 'SL1/3/4': ['SL1', 'SL3'] });
+    expect(data.sections.at(-1)).toMatchObject({ name: 'Engine', wo: 'SLX', g: 'SLX' });
+    expect(data.checks.at(-1)).toMatchObject({ g: 'SLX', rows: [{ u: '573', s: 'SLX' }] });
+  });
+
+  it('does not borrow checks from other groups: the same wording is a new check in its own group', () => {
+    const data = master();
+    const doc = { ...own, items: [{ ...own.items[0], text: 'Examine the belts.' }] };
+    const plan = buildPlan(doc, data);
+    expect(plan.items[0].checkId).toBeNull();
+  });
+
+  it('matches its own checks on the next import, and no longer creates anything', () => {
+    const data = master();
+    applyPlan(data, buildPlan(own, data), { decisions: {}, untickMissing: false, when: 'd', who: 'w' });
+    const again = buildPlan({ ...own, unit: '573' }, data);
+    expect(again).toMatchObject({ createsLevel: false, createsGroup: false, group: 'SLX' });
+    expect(again.items[0]).toMatchObject({ via: 'exact', alreadyIn: true });
+  });
+
+});
+
+describe('importing a level and unit that do not exist yet', () => {
+  const slx = {
+    ...parsed([]),
+    unit: '573',
+    level: 'SLX',
+    group: 'SL1/3/4',
+    items: [
+      { sectionNo: 1, sectionName: 'Engine', band: null, text: 'Service the second unit.', options: [], page: 1 },
+      { sectionNo: 1, sectionName: 'Engine', band: null, text: 'Examine the belts.', options: [], page: 1 },
+    ],
+  };
+
+  it('creates the level, ticks an existing check, and files new checks under a heading named for the level', () => {
+    const data = master();
+    const plan = buildPlan(slx, data);
+    expect(plan).toMatchObject({ createsLevel: true, group: 'SL1/3/4', level: 'SLX' });
+    expect(plan.items[1]).toMatchObject({ checkId: 1, via: 'elsewhere' });
+
+    const r = applyPlan(data, plan, { decisions: {}, untickMissing: false, when: 'd', who: 'w' });
+    expect(r).toMatchObject({ created: 1, ticked: 1, sectionsCreated: 1 });
+    expect(data.levels['SL1/3/4']).toContain('SLX');
+    // Not the WO #2 "Engine" section that already exists: SLX has no bands of its own.
+    expect(data.sections.at(-1)).toMatchObject({ name: 'Engine', wo: 'SLX', g: 'SL1/3/4' });
+    expect(data.checks.find((c) => c.id === 1)?.rows).toContainEqual({ u: '573', s: 'SLX' });
+  });
+
+  it('creates the unit XXX as well as the level, and ticks its checks for it', () => {
+    const data = master();
+    const plan = buildPlan({ ...slx, unit: 'XXX' }, data);
+    expect(plan).toMatchObject({ createsUnit: true, createsLevel: true });
+
+    applyPlan(data, plan, { decisions: {}, untickMissing: false, when: 'd', who: 'w' });
+    expect(data.units).toEqual(['573', 'XXX']);
+    expect(data.addedUnits).toEqual(['XXX']);
+    expect(data.checks.at(-1)).toMatchObject({ rows: [{ u: 'XXX', s: 'SLX' }] });
+  });
+
+  it('still blocks a document whose unit could not be read at all', () => {
+    expect(buildPlan({ ...slx, unit: null }, master()).blockers).toEqual(['The unit could not be read from the title.']);
   });
 });

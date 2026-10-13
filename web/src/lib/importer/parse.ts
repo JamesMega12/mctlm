@@ -127,23 +127,43 @@ function readMeta(pages: PdfPage[], doc: ParsedDoc) {
   const top = pages[0].items.filter((i) => i.y > pages[0].height - 70 && i.str.trim() !== '');
   const headLines = buildLines(top, 1).map((l) => l.text);
 
-  const unit = headLines.map((t) => /CPF-(\d{3})(?:\s*[/&]\s*(?:CPF-)?(\d{3}))?/.exec(t)).find(Boolean);
-  if (unit) doc.unit = unit[2] ? `${unit[1]}/${unit[2]}` : unit[1];
+  // A unit is three digits (CPF-573, CPF-376/377) or a placeholder like the 2-year
+  // SLX document's "CPF-XXX", which is simply a unit called XXX.
+  const unit = headLines.map((t) => /CPF-(\d{3}|XXX)(?:\s*[/&]\s*(?:CPF-)?(\d{3}))?/i.exec(t)).find(Boolean);
+  if (unit) doc.unit = unit[2] ? `${unit[1]}/${unit[2]}` : unit[1].toUpperCase();
 
-  const levelText = headLines.find((t) => /Service Level/i.test(t)) ?? '';
-  const n = /Service Level\s*(\d)/i.exec(levelText)?.[1];
-  if (n === '0') {
-    const sl0 = /Outgoing|Incoming|Rig\s*Up|Rig\s*Down/i.exec(levelText)?.[0].replace(/\s+/g, '').toLowerCase();
-    doc.level = sl0 === 'outgoing' ? 'Outgoing' : sl0 === 'incoming' ? 'Incoming' : sl0 === 'rigup' ? 'Rigup' : sl0 === 'rigdown' ? 'RigDown' : null;
+  // "Service Level 3 (500 hours)", "Service Level X (2 year)", or a bare "SLX". The
+  // token is a whole number or up to three letters; anything longer isn't a level name.
+  const levelText =
+    headLines.find((t) => /Service Level/i.test(t)) ?? headLines.find((t) => /\bSL\s?(?:\d+|[A-Z]{1,3})\b/.test(t)) ?? '';
+  const tok = (/Service Level\s*(\d+|[A-Za-z]{1,3})\b/i.exec(levelText) ?? /\bSL\s?(\d+|[A-Z]{1,3})\b/.exec(levelText))?.[1];
+  if (tok && /^0+$/.test(tok)) {
+    // SL0 is several documents, one per kind of check: "Outgoing Check, Service Level 0".
+    const known = /Outgoing|Incoming|Rig\s*Up|Rig\s*Down/i.exec(levelText)?.[0].replace(/\s+/g, '').toLowerCase();
+    const named = /^(.*?)\s*(?:Check\b|,)/i.exec(levelText)?.[1].replace(/[^A-Za-z0-9]+/g, '');
+    doc.level =
+      known === 'outgoing'
+        ? 'Outgoing'
+        : known === 'incoming'
+          ? 'Incoming'
+          : known === 'rigup'
+            ? 'Rigup'
+            : known === 'rigdown'
+              ? 'RigDown'
+              : named && named.length <= 24
+                ? named
+                : null;
     doc.group = 'SL0';
-  } else if (n) {
-    doc.level = `SL${n}`;
-    doc.group = 'SL1/3/4';
+  } else if (tok) {
+    doc.level = `SL${tok.toUpperCase()}`;
+    // Numbered levels (SL1, SL2, SL10) belong with SL1/3/4. A lettered one (SLX)
+    // is a service level of its own: parseDocument gives it a group named after it.
+    doc.group = /^\d+$/.test(tok) ? 'SL1/3/4' : null;
   }
 
   for (const p of pages) {
     const foot = p.items.filter((i) => i.y < FOOTER_BAND).map((i) => i.str).join(' ');
-    const v = /(?:V|Rev\.?\s*)\d+(?:\.\d+)?,\s*\d{1,2}-[A-Za-z]{3}-\d{2}/.exec(foot);
+    const v = /(?:V|Rev\.?\s*)\d+(?:\.\d+)?,?\s*\d{1,2}-[A-Za-z]{3}-\d{2}/.exec(foot);
     if (v) {
       doc.version = v[0];
       break;
@@ -219,6 +239,89 @@ function parseBanded(lines: Line[], doc: ParsedDoc) {
 
   const expected = glyphLines.length;
   if (doc.items.length !== expected) doc.warnings.push(`Found ${doc.items.length} checks but ${expected} item markers.`);
+}
+
+/** Layout with no item markers (the 2-year SLX document): numbered sections, no
+ * bands, and nothing but spacing to say where a check starts. Lines inside a
+ * check sit one line-pitch apart; a note or list item sits a little further
+ * (~1.3x); a new check a lot further (1.6x and up). The threshold is taken from
+ * the document's own line pitch. This is inference, not a count, so the result is
+ * flagged for review. */
+function parseSpaced(lines: Line[], doc: ParsedDoc, pages: PdfPage[]) {
+  const gaps: number[] = [];
+  lines.forEach((l, i) => {
+    const prev = lines[i - 1];
+    if (prev && prev.page === l.page && prev.y - l.y > 0 && prev.y - l.y < 12) gaps.push(prev.y - l.y);
+  });
+  gaps.sort((a, b) => a - b);
+  const itemGap = (gaps.length ? gaps[Math.floor(gaps.length / 2)] : 10.3) * 1.5;
+
+  // Body text starts at one x; section headings sit left of it.
+  const starts = new Map<number, number>();
+  for (const l of lines) if (!SECTION.test(l.text)) starts.set(Math.round(l.x), (starts.get(Math.round(l.x)) ?? 0) + 1);
+  const itemX = [...starts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 60;
+
+  let band: string | null = null;
+  let secNo = 0;
+  let secName = '';
+  let item: ParsedItem | null = null;
+  let byRules = 0;
+  let bySpacing = 0;
+  let atPageTop = 0;
+
+  lines.forEach((l, i) => {
+    const b = BAND.exec(l.text);
+    if (b) {
+      band = `WO #${b[1]}: ${cleanTitle(b[2])}`;
+      item = null;
+      return;
+    }
+    const s = SECTION.exec(l.text);
+    if (s && Number(s[1]) === secNo + 1 && l.x < itemX - 5) {
+      secNo = Number(s[1]);
+      secName = cleanTitle(s[2]);
+      item = null;
+      return;
+    }
+    if (!secNo) return;
+
+    const prev = lines[i - 1];
+    const sameBlock = !!prev && prev.page === l.page;
+    const isNote = /^Note:/i.test(l.text);
+    // Where the page draws a line between table rows, a check starts where a line
+    // lies between two text lines, and nowhere else: one row can hold several
+    // paragraphs. Without row lines, fall back to the gap between lines. At the top
+    // of a page there is neither: a capitalised line after a finished sentence
+    // starts a check; a lower-case one carries on.
+    const rules = pages[l.page - 1]?.rules ?? [];
+    let startsCheck: boolean;
+    if (!item) startsCheck = true;
+    else if (sameBlock && rules.length) {
+      startsCheck = rules.some((r) => r < prev.y && r > l.y + 5);
+      byRules++;
+    } else if (sameBlock) {
+      startsCheck = !isNote && prev.y - l.y >= itemGap;
+      bySpacing++;
+    } else {
+      startsCheck = !isNote && /^[A-Z]/.test(l.text) && /[.!?:)]$|\d$/.test(item.text.trimEnd());
+      atPageTop++;
+    }
+    if (startsCheck) {
+      item = { sectionNo: secNo, sectionName: secName, band, text: l.text, options: [], page: l.page };
+      doc.items.push(item);
+    } else if (item) {
+      item.text = joinText(item.text, l.text);
+    }
+  });
+
+  if (doc.items.length) {
+    const circle = 'The other InTouch documents have a small OK circle beside every check, which lets the app count them exactly. This one does not';
+    doc.warnings.push(
+      byRules && !bySpacing
+        ? `${circle}, so the app used the lines drawn between the table's rows to tell where each check starts${atPageTop ? ' (a check that carries over a page break is joined by guesswork)' : ''}. Skim the list to make sure each check looks whole.`
+        : `${circle}, so the app started a new check wherever the gap between lines got bigger. Skim the list to make sure each check looks whole.`,
+    );
+  }
 }
 
 function parseOptions(lines: Line[], doc: ParsedDoc) {
@@ -303,10 +406,20 @@ export function parseDocument(pages: PdfPage[], fileName: string): ParsedDoc {
   if (!doc.unit) doc.warnings.push('Could not read the unit from the title.');
   if (!doc.level) doc.warnings.push('Could not read the service level from the title.');
 
-  const sl0 = doc.group === 'SL0';
-  const lines = bodyLines(pages, sl0, doc.warnings);
-  if (sl0) parseOptions(lines, doc);
-  else parseBanded(lines, doc);
+  // The layout, not the title, decides how to read the body: bulleted answers
+  // (SL0), a marker on each check (SL1/3/4), or neither (spacing only).
+  const probe = bodyLines(pages, false, []);
+  const markers = probe.filter((l) => l.glyph === PASS && l.glyphX > 450).length;
+  const bullets = probe.filter((l) => l.glyph && l.glyphX <= 450).length;
+  const layout = markers > bullets ? 'markers' : bullets > 0 ? 'options' : 'spacing';
+  // A lettered level (SLX) is a service level in its own right: it gets a group
+  // (a matrix tab) named after it, unless its layout is SL0's.
+  if (!doc.group) doc.group = layout === 'options' ? 'SL0' : (doc.level ?? 'SL1/3/4');
+
+  const lines = bodyLines(pages, layout === 'options', doc.warnings);
+  if (layout === 'options') parseOptions(lines, doc);
+  else if (layout === 'markers') parseBanded(lines, doc);
+  else parseSpaced(lines, doc, pages);
   if (!doc.items.length) doc.warnings.push('No checks were found in this PDF. Is it an InTouch ACP document?');
   return doc;
 }

@@ -61,6 +61,8 @@ export interface ImportLogEntry {
   ticked: number;
   created: number;
   unticked: number;
+  /** Absent in entries saved before replacing existed. */
+  replaced?: number;
 }
 
 /** What "Undo last import" restores: the checklist as it was before. */
@@ -533,7 +535,7 @@ export const useStore = create<StoreState>()(
     },
 
     applyImport: (entries) => {
-      const total: ApplyResult = { ticked: 0, created: 0, unticked: 0, sectionsCreated: 0, linked: 0, skipped: 0 };
+      const total: ApplyResult = { ticked: 0, created: 0, unticked: 0, sectionsCreated: 0, linked: 0, replaced: 0, skipped: 0 };
       const at = new Date().toISOString().slice(0, 10);
       set((state) => {
         // A plain copy of the data as it was, for "Undo last import".
@@ -552,13 +554,14 @@ export const useStore = create<StoreState>()(
             ticked: r.ticked,
             created: r.created,
             unticked: r.unticked,
+            replaced: r.replaced,
           });
         }
         state.importLog.length = Math.min(state.importLog.length, 60);
         state.lastImport = { at, files: entries.length, before };
       });
       get().pushToast(
-        `Imported ${entries.length} document${entries.length !== 1 ? 's' : ''}: ${total.created} added, ${total.ticked} ticked, ${total.unticked} unticked.`,
+        `Imported ${entries.length} document${entries.length !== 1 ? 's' : ''}: ${total.created} added, ${total.replaced} replaced, ${total.ticked} ticked, ${total.unticked} unticked.`,
       );
       return total;
     },

@@ -143,7 +143,33 @@ SL1/3/4 checks, no warnings):
 - Trim each page to the checks area (below "Checks", above "Equipment status and
   signatures" / the deficiency table) **before** looking for the gutter: the
   intro and sign-off text span both columns and hide it.
-- Footers vary: `V4.1, 14-Aug-26` and `Rev 3.1, 2-Sep-26` both occur.
+- Footers vary: `V4.1, 14-Aug-26`, `Rev 3.1, 2-Sep-26` and `V2.3 19-Aug-26` (no comma) all occur.
+- **Levels are read from the title, not assumed.** `Service Level 10` is SL10 (not
+  SL1), `Service Level X` / `SLX` is SLX, and an unfamiliar SL0 kind ("Pre-Job
+  Check, Service Level 0") becomes its own level. An unknown level is created on
+  import and the review says so. A numbered one (SL2) joins SL1/3/4; a **lettered
+  one (SLX) becomes a service level of its own: a new group, so its own matrix
+  tab**, named after it. Checks belong to one group, so there is nothing to match
+  against on a first SLX import: the card shows a plain "Will be added" list by
+  section instead of per-check choices, and a later SLX document matches only checks
+  already in the SLX group.
+- **The layout, not the title, picks the reader**: bulleted answers = SL0 reader;
+  a right-margin marker per check = SL1/3/4 reader; neither = spacing reader.
+- **The 2-year SLX document has no OK circles** but is the same table template as
+  SL1/3/4 (numbered rows, blue section bars). Row lines are read from the page's
+  drawing commands (`extract.ts` `readRules`, pdf.js 6 path format; `[]` if the
+  shape differs): a check starts only where a line lies between two text lines, so
+  a row holding several paragraphs stays one check (14 on the real file; spacing
+  alone split one row and gave 15). Without row lines it falls back to a gap of
+  1.5x the line pitch (`Note:` lines ~1.3x stay put). At a page top neither exists,
+  so a capitalised line after a finished sentence starts one. It is still not a
+  count, so the card carries a "skim the list" warning.
+- **"CPF-XXX"** (the 2-year SLX document's title) is just a unit called `XXX`: it is
+  added on import like any new unit (CPF-637 was), and gets a column in every tab.
+- A document with **no WO bands** outside SL0 gets a band named after its level
+  (`bandFor`), so its sections show under their own matrix heading rather than
+  being folded into a same-named section of WO #1 to #5.
+- A unit the app doesn't have (CPF-637) is added on import.
 - Hyphenated wraps (`up-to-` / `date.`) join without a space.
 
 Matching rules (follow the hand-built sheet; see the handoff note's look-alike
@@ -154,6 +180,10 @@ section for why):
   (`Check.alias`). **Never merge on similarity.** Close wordings (Dice >= 85%)
   are only *suggested*; the user chooses "Same check", which stores the new
   wording as an alias so it matches by itself next time.
+- "Replace check" (`{ replace: id }`) is the other choice on a close match: the
+  existing check takes the document's wording (and, on SL0 only, its answers)
+  and keeps the old wording as an alias, with a history entry. "Same check"
+  (`{ link: id }`) keeps the existing wording instead.
 - Match within the section and WO first; same wording under another section is
   accepted only if exactly one check has it.
 - Suggestions only point at checks that existed before the batch
