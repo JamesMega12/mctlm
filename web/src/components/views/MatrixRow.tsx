@@ -99,21 +99,22 @@ export default function MatrixRow({ checkId, us, ss, span, isOpen, mg, fs, units
         <tr className="det">
           <td colSpan={span}>
             <div className="detin">
-              <b>Answers</b>
-              {c.o.length ? (
-                <div className="answers">
-                  {c.o.map((o, i) => (
-                    <span className={`ans ${o.bad ? 'bad' : 'good'}`} key={i}>
-                      <i />
-                      {o.t}
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <div className="muted">
-                  No answer options in the source for this task.{' '}
-                  {c.g === 'SL1/3/4' ? 'SL1, 3 and 4 tasks have none in the ACP export.' : ''}
-                </div>
+              {c.g === 'SL0' && (
+                <>
+                  <b>Answers</b>
+                  {c.o.length ? (
+                    <div className="answers">
+                      {c.o.map((o, i) => (
+                        <span className={`ans ${o.bad ? 'bad' : 'good'}`} key={i}>
+                          <i />
+                          {o.t}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="muted">No answer options in the source for this task.</div>
+                  )}
+                </>
               )}
               <div className="detfoot">
                 <span className="muted">
