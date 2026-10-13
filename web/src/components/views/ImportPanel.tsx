@@ -120,13 +120,13 @@ export default function ImportPanel() {
 
   const closeLinks = plans.flatMap((p, di) =>
     p.items.flatMap((it, i) =>
-      it.checkId === null && it.suggestion && it.suggestion.score >= BULK_LINK_MIN && !(decisions[di]?.[i]) ? [{ di, i, id: it.suggestion.checkId }] : [],
+      it.checkId === null && it.suggestion && it.suggestion.score >= BULK_LINK_MIN && !decisions[di]?.[i] ? [{ di, i, id: it.suggestion.checkId }] : [],
     ),
   );
-  const linkClose = () =>
+  const resolveClose = (kind: 'link' | 'replace') =>
     setDecisions((cur) => {
       const next = { ...cur };
-      for (const { di, i, id } of closeLinks) next[di] = { ...(next[di] ?? {}), [i]: { link: id } };
+      for (const { di, i, id } of closeLinks) next[di] = { ...(next[di] ?? {}), [i]: kind === 'link' ? { link: id } : { replace: id } };
       return next;
     });
 
@@ -236,13 +236,22 @@ export default function ImportPanel() {
                 Import {ready.length} document{ready.length !== 1 ? 's' : ''}
               </button>
               {closeLinks.length > 0 && (
-                <button
-                  className="btn ghost"
-                  onClick={linkClose}
-                  title={`Treat checks that are at least ${Math.round(BULK_LINK_MIN * 100)}% the same wording as the existing check, and remember the new wording for next time`}
-                >
-                  Link {closeLinks.length} close match{closeLinks.length !== 1 ? 'es' : ''} (≥{Math.round(BULK_LINK_MIN * 100)}%)
-                </button>
+                <>
+                  <button
+                    className="btn ghost"
+                    onClick={() => resolveClose('link')}
+                    title={`Treat checks that are at least ${Math.round(BULK_LINK_MIN * 100)}% the same wording as the existing check, keep the existing wording, and remember the new wording for next time`}
+                  >
+                    Link {closeLinks.length} close match{closeLinks.length !== 1 ? 'es' : ''} (≥{Math.round(BULK_LINK_MIN * 100)}%)
+                  </button>
+                  <button
+                    className="btn ghost"
+                    onClick={() => resolveClose('replace')}
+                    title={`For checks that are at least ${Math.round(BULK_LINK_MIN * 100)}% the same wording as an existing check, replace the existing wording (and SL0 answers) with the document's`}
+                  >
+                    Replace {closeLinks.length} close match{closeLinks.length !== 1 ? 'es' : ''}
+                  </button>
+                </>
               )}
               <button className="linkbtn" onClick={clear}>
                 Clear
@@ -302,6 +311,7 @@ export default function ImportPanel() {
                 <th>Version</th>
                 <th>Added</th>
                 <th>Ticked</th>
+                <th>Replaced</th>
                 <th>Unticked</th>
               </tr>
             </thead>
@@ -311,11 +321,12 @@ export default function ImportPanel() {
                   <td>{e.at}</td>
                   <td>{e.file}</td>
                   <td>
-                    CPF-{e.unit} · {SLNAME(e.level, levels)}
+                    {e.unit ? `CPF-${e.unit}` : 'No unit'} · {SLNAME(e.level, levels)}
                   </td>
                   <td>{e.version ?? ''}</td>
                   <td>{e.created}</td>
                   <td>{e.ticked}</td>
+                  <td>{e.replaced ?? 0}</td>
                   <td>{e.unticked}</td>
                 </tr>
               ))}

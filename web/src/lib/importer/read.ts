@@ -12,7 +12,7 @@ export async function readPdf(file: File): Promise<ParsedDoc> {
     pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
     const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), verbosity: 0 });
     try {
-      return parseDocument(await extractPages(await task.promise), file.name);
+      return parseDocument(await extractPages(await task.promise, pdfjs.OPS), file.name);
     } finally {
       void task.destroy();
     }

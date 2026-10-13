@@ -17,6 +17,8 @@ export interface PdfPage {
   width: number;
   height: number;
   items: TextItem[];
+  /** Y of each thin, wide horizontal line drawn on the page (table row borders), highest first. */
+  rules?: number[];
 }
 
 /** One check as written in an InTouch document. */
